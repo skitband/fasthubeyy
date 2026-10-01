@@ -21,6 +21,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -54,6 +55,10 @@
         "projectId": "f1155499-ee12-443f-b870-50b910a6d2ef"
       }
     },
-    "owner": "skitband"
+    "owner": "skitband",
+    "runtimeVersion": "exposdk:57.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/f1155499-ee12-443f-b870-50b910a6d2ef"
+    }
   }
 }
