@@ -7,10 +7,11 @@ const config = getDefaultConfig(__dirname);
 config.resolver.assetExts.push('wasm');
 
 // expo-sqlite on web needs SharedArrayBuffer, which requires cross-origin isolation.
+// `require-corp` (not `credentialless`) because Safari/iOS only isolates with require-corp.
 // Patched at the http level because Expo serves the HTML before `enhanceMiddleware` runs.
 const originalWriteHead = http.ServerResponse.prototype.writeHead;
 http.ServerResponse.prototype.writeHead = function (...args) {
-  this.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+  this.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   this.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   return originalWriteHead.apply(this, args);
 };
