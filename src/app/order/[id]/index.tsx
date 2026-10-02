@@ -2,22 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Sharing from 'expo-sharing';
-import { File, Paths } from 'expo-file-system';
-import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Formik, type FormikProps } from 'formik';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Badge, Input, OutlineButton, PrimaryButton } from '@/components/ui';
+import { Badge, DangerButton, Input, PrimaryButton } from '@/components/ui';
 import { LogPaymentSheet } from '@/components/LogPaymentSheet';
+import { PaymentHistorySheet } from '@/components/PaymentHistorySheet';
 import { useDbData, usePullToRefresh, useRefresh } from '@/db/hooks';
-import { addOrderAttachment, canAddItemsToOrder, deleteOrder, deleteOrderAttachment, deleteOrderItem, getOrder, listOrderAttachments, listOrderEvents, listPayments, markOrderFullyPaid, markOrderUnpaid, setOrderStatus, setOrderWeight, updateOrderItem } from '@/db/queries';
+import { addOrderAttachment, canAddItemsToOrder, canDeleteOrder, clearPaymentProof, deleteOrder, deleteOrderAttachment, deleteOrderItem, getOrder, getTrip, listOrderAttachments, listOrderEvents, listPayments, markOrderFullyPaid, markOrderUnpaid, setOrderStatus, setOrderWeight, tripStatus, updateOrderItem } from '@/db/queries';
 import type { OrderAttachment, OrderItem, OrderStatus } from '@/db/types';
 import { colors, fonts, PAY, radius, spacing, STATUS } from '@/theme/tokens';
 import { peso } from '@/lib/money';
+import { toDataUri, shareStoredFile } from '@/lib/dataUri';
 import { editOrderItemValidationSchema, type EditOrderItemFormValues } from '@/lib/formSchemas';
 
 const CHAIN = ['confirmed', 'bought', 'packed', 'delivered'] as const;
@@ -36,6 +37,7 @@ const NEXT_PROGRESS: Partial<Record<OrderStatus, { status: OrderStatus; label: s
 type OrderDetailAttachment = {
   id: string;
   orderAttachmentId: string | null;
+  paymentId: string | null;
   name: string;
   uri: string | null;
   mimeType: string | null;
@@ -47,6 +49,11 @@ function isImageAttachment(attachment: OrderDetailAttachment): boolean {
   return attachment.mimeType?.startsWith('image/') === true || /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(attachment.name);
 }
 
+// Payment rows without a receipt image have nothing to delete; the payment itself is kept.
+function canDeleteAttachment(attachment: OrderDetailAttachment): boolean {
+  return !!attachment.orderAttachmentId || (!!attachment.paymentId && !!attachment.uri);
+}
+
 export default function OrderDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -54,6 +61,7 @@ export default function OrderDetail() {
   const { refresh } = useRefresh();
   const pullRefresh = usePullToRefresh();
   const [sheet, setSheet] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [weightDraft, setWeightDraft] = useState('');
   const [weightError, setWeightError] = useState('');
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
@@ -66,6 +74,7 @@ export default function OrderDetail() {
     if (!order) return null;
     return {
       order,
+      trip: getTrip(d, order.trip_id),
       payments: listPayments(d, order.id),
       attachments: listOrderAttachments(d, order.id),
       events: listOrderEvents(d, order.id),
@@ -84,7 +93,10 @@ export default function OrderDetail() {
     );
   }
 
-  const { order, payments, attachments, events } = data;
+  const { order, trip, payments, attachments, events } = data;
+  const tripClosed = !!trip && tripStatus(trip) === 'closed';
+  const itemsEditable = canAddItemsToOrder(order) && !tripClosed;
+  const orderDeletable = canDeleteOrder(order) && !tripClosed;
   const st = STATUS[order.status];
   const pay = PAY[order.pay];
   const subtotal = order.total - order.fee;
@@ -94,6 +106,7 @@ export default function OrderDetail() {
     ...payments.map((payment) => ({
       id: `payment-${payment.id}`,
       orderAttachmentId: null,
+      paymentId: payment.id,
       name: `Payment · ${peso(payment.amount)}`,
       uri: payment.proof_uri,
       mimeType: payment.proof_uri ? 'image/*' : null,
@@ -102,11 +115,13 @@ export default function OrderDetail() {
         (payment.method ?? 'payment').toUpperCase(),
         new Date(payment.paid_at).toLocaleString(),
         payment.reference ? `Ref: ${payment.reference}` : '',
+        payment.note ?? '',
       ].filter(Boolean).join(' · '),
     })),
     ...attachments.map((attachment) => ({
       id: `order-${attachment.id}`,
       orderAttachmentId: attachment.id,
+      paymentId: null,
       name: attachment.name,
       uri: attachment.uri,
       mimeType: attachment.mime_type,
@@ -116,6 +131,7 @@ export default function OrderDetail() {
   ];
 
   function confirmDeleteOrder() {
+    if (!orderDeletable) return;
     Alert.alert(
       'Delete order?',
       `Delete ${order.ref} for ${order.buyer_name}? Its items and payments will be removed.`,
@@ -135,15 +151,56 @@ export default function OrderDetail() {
   }
 
   function togglePaid() {
-    if (order.pay === 'paid') markOrderUnpaid(db, order.id);
-    else markOrderFullyPaid(db, order.id);
-    refresh();
+    if (order.pay === 'paid') {
+      Alert.alert(
+        'Mark as unpaid?',
+        `All ${payments.length} payment record${payments.length === 1 ? '' : 's'} for ${order.ref} will be removed and the full ${peso(order.total)} will be owed again.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Mark unpaid',
+            style: 'destructive',
+            onPress: () => {
+              markOrderUnpaid(db, order.id);
+              refresh();
+            },
+          },
+        ]
+      );
+      return;
+    }
+    Alert.alert(
+      'Mark fully paid?',
+      `A ${peso(balance)} cash payment will be logged to settle ${order.ref} for ${order.buyer_name}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark paid',
+          onPress: () => {
+            markOrderFullyPaid(db, order.id);
+            refresh();
+          },
+        },
+      ]
+    );
   }
 
   const nextProgress = NEXT_PROGRESS[order.status];
+  const weightRequired = nextProgress?.status === 'packed';
+  // Weight stays editable until packed, even on paid orders, so packing is never blocked.
+  const weightEditable = order.status !== 'packed' && order.status !== 'delivered';
 
   function advanceProgress() {
     if (!nextProgress) return;
+    if (nextProgress.status === 'packed') {
+      const trimmed = weightDraft.trim();
+      const weight = Number(trimmed);
+      if (!trimmed || !Number.isFinite(weight) || weight <= 0) {
+        setWeightError('Enter the total order weight before marking as packed.');
+        return;
+      }
+      if (weight !== order.weight_kg) setOrderWeight(db, order.id, weight);
+    }
     setOrderStatus(db, order.id, nextProgress.status, nextProgress.note);
     refresh();
   }
@@ -184,7 +241,8 @@ export default function OrderDetail() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
     if (!result.canceled) {
-      await setFieldValue('photoUri', result.assets[0].uri);
+      const asset = result.assets[0];
+      await setFieldValue('photoUri', await toDataUri(asset.uri, asset.mimeType));
     }
   }
 
@@ -208,10 +266,8 @@ export default function OrderDetail() {
   }
 
   async function storeAttachment(input: { name: string; uri: string; source: OrderAttachment['source']; mimeType?: string | null }) {
-    const safeName = input.name.replace(/[^a-zA-Z0-9._-]+/g, '_') || 'attachment';
-    const savedFile = new File(Paths.document, `${Date.now()}-${safeName}`);
-    await new File(input.uri).copy(savedFile);
-    addOrderAttachment(db, { orderId: order.id, ...input, uri: savedFile.uri });
+    const uri = await toDataUri(input.uri, input.mimeType);
+    addOrderAttachment(db, { orderId: order.id, ...input, uri });
     refresh();
   }
 
@@ -265,17 +321,22 @@ export default function OrderDetail() {
     }
   }
 
-  function confirmDeleteAttachment(attachment: OrderAttachment) {
+  function confirmDeleteAttachment(attachment: OrderDetailAttachment) {
+    const isReceipt = !attachment.orderAttachmentId;
     Alert.alert(
-      'Remove attachment?',
-      `Remove ${attachment.name} from this order?`,
+      isReceipt ? 'Remove receipt image?' : 'Delete attachment?',
+      isReceipt
+        ? 'The receipt image will be removed. The payment record is kept.'
+        : `Delete ${attachment.name} from this order? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Remove',
+          text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            deleteOrderAttachment(db, attachment.id);
+            if (attachment.orderAttachmentId) deleteOrderAttachment(db, attachment.orderAttachmentId);
+            else if (attachment.paymentId) clearPaymentProof(db, attachment.paymentId);
+            setViewingAttachment(null);
             refresh();
           },
         },
@@ -286,10 +347,7 @@ export default function OrderDetail() {
   async function openAttachmentExternally() {
     if (!viewingAttachment?.uri) return;
     try {
-      await Sharing.shareAsync(viewingAttachment.uri, {
-        mimeType: viewingAttachment.mimeType ?? undefined,
-        dialogTitle: 'Open attachment',
-      });
+      await shareStoredFile(viewingAttachment.uri, viewingAttachment.name);
     } catch (error) {
       Alert.alert('Could not open attachment', String(error));
     }
@@ -303,13 +361,25 @@ export default function OrderDetail() {
             <Pressable hitSlop={10} onPress={() => router.back()}>
               <MaterialIcons name="arrow-back-ios-new" size={20} color={colors.white} />
             </Pressable>
-            <Text style={styles.ref}>{order.ref}</Text>
+            <View style={styles.breadcrumb}>
+              <Pressable accessibilityRole="link" accessibilityLabel="Go to orders" hitSlop={8} onPress={() => router.navigate('/orders')}>
+                <Text style={styles.crumbLink}>Orders</Text>
+              </Pressable>
+              <MaterialIcons name="chevron-right" size={14} color={colors.onInk60} />
+              <Text style={styles.ref}>{order.ref}</Text>
+            </View>
           </View>
           <Text style={styles.buyer}>{order.buyer_name}</Text>
-          <Text style={styles.contact}>
-            {order.buyer_phone ?? 'No phone'}
-            {order.buyer_channel ? ` \u00B7 ${order.buyer_channel}` : ''}
-          </Text>
+          <View style={styles.contacts}>
+            <View style={styles.contactRow}>
+              <MaterialIcons name="phone" size={14} color={colors.onInk62} />
+              <Text style={styles.contact}>{order.buyer_phone || 'No phone'}</Text>
+            </View>
+            <View style={[styles.contactRow, { flexShrink: 1 }]}>
+              <MaterialIcons name="mail-outline" size={14} color={colors.onInk62} />
+              <Text style={styles.contact} numberOfLines={1}>{order.buyer_email || 'No email'}</Text>
+            </View>
+          </View>
           <View style={styles.badges}>
             <Badge bg={st.bg} fg={st.fg} label={st.label} />
             <Badge bg={pay.bg} fg={pay.fg} label={pay.label} />
@@ -321,7 +391,7 @@ export default function OrderDetail() {
             <View>
               <Text style={styles.sectionLabel}>Items</Text>
             </View>
-            {canAddItemsToOrder(order) ? (
+            {itemsEditable ? (
               <Pressable
                 accessibilityRole="button"
                 style={styles.addItemsButton}
@@ -336,19 +406,22 @@ export default function OrderDetail() {
             {order.items.map((it) => (
               <ReanimatedSwipeable
                 key={it.id}
-                enabled={canAddItemsToOrder(order)}
+                enabled={itemsEditable}
                 overshootRight={false}
                 rightThreshold={40}
                 friction={2}
                 renderRightActions={(_progress, _translation, swipeable) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Delete ${it.name}`}
-                    style={styles.deleteItemAction}
-                    onPress={() => confirmDeleteItem(it, swipeable.close)}
-                  >
-                    <MaterialIcons name="delete-outline" size={21} color={colors.white} />
-                  </Pressable>
+                  <View style={styles.swipeActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${it.name}`}
+                      style={[styles.swipeAction, styles.deleteAction]}
+                      onPress={() => confirmDeleteItem(it, swipeable.close)}
+                    >
+                      <MaterialIcons name="delete-outline" size={19} color={colors.errorFg} />
+                      <Text style={styles.deleteActionText}>Delete</Text>
+                    </Pressable>
+                  </View>
                 )}
               >
                 <View style={styles.itemRow}>
@@ -358,17 +431,25 @@ export default function OrderDetail() {
                     <View style={styles.itemThumbPlaceholder} />
                   )}
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.itemName}>{it.qty > 1 ? `${it.name} \u00D7${it.qty}` : it.name}</Text>
-                    {it.foreign_cost ? <Text style={styles.itemMeta}>{it.foreign_cost}</Text> : null}
+                    <Text style={styles.itemName}>{it.qty > 1 ? `${it.name}` : it.name}</Text>
+                    <Text style={styles.itemMeta}>{`\u00D7${it.qty}`}</Text>
                   </View>
                   <View style={styles.itemRight}>
                     <Text style={styles.itemPrice}>{peso(it.unit_cost * it.qty)}</Text>
-                    {canAddItemsToOrder(order) ? (
+                    {itemsEditable ? (
                       <Pressable accessibilityRole="button" onPress={() => setEditingItem(it)} hitSlop={8}>
                         <Text style={styles.editItemText}>Update</Text>
                       </Pressable>
                     ) : null}
                   </View>
+                  {itemsEditable ? (
+                    <MaterialIcons
+                      name="menu-open"
+                      size={20}
+                      color={colors.textDisabled}
+                      accessibilityLabel="Swipe left to delete"
+                    />
+                  ) : null}
                 </View>
               </ReanimatedSwipeable>
             ))}
@@ -385,20 +466,24 @@ export default function OrderDetail() {
           </View>
 
           <View style={styles.weightFieldSection}>
-            <Text style={styles.sectionLabel}>Total order weight (kg)</Text>
+            <Text style={styles.sectionLabel}>{weightRequired ? 'Total order weight (kg) *' : 'Total order weight (kg)'}</Text>
             <View style={styles.weightInputRow}>
               <Input
                 value={weightDraft}
                 onChangeText={(value) => { setWeightDraft(value); setWeightError(''); }}
                 onBlur={saveWeight}
                 keyboardType="decimal-pad"
-                editable={canAddItemsToOrder(order)}
+                editable={weightEditable}
                 placeholder="0"
                 style={styles.weightInput}
               />
               <Text style={styles.weightUnit}>kg</Text>
             </View>
-            {weightError ? <Text style={styles.weightError}>{weightError}</Text> : null}
+            {weightError ? (
+              <Text style={styles.weightError}>{weightError}</Text>
+            ) : weightRequired && !(order.weight_kg > 0) ? (
+              <Text style={styles.weightHint}>Required before marking as packed.</Text>
+            ) : null}
           </View>
 
           <Text style={styles.sectionLabel}>Payment summary</Text>
@@ -409,8 +494,13 @@ export default function OrderDetail() {
               <Pressable style={styles.proofBtn} onPress={togglePaid}>
                 <Text style={styles.proofBtnText}>{order.pay === 'paid' ? 'Mark as unpaid' : 'Mark fully paid'}</Text>
               </Pressable>
-              <Pressable style={styles.proofBtn} onPress={() => setSheet(true)}>
-                <Text style={styles.proofBtnText}>Log payment</Text>
+              {order.pay !== 'paid' ? (
+                <Pressable style={styles.proofBtn} onPress={() => setSheet(true)}>
+                  <Text style={styles.proofBtnText}>Log payment</Text>
+                </Pressable>
+              ) : null}
+              <Pressable style={styles.proofBtn} onPress={() => setHistoryOpen(true)}>
+                <Text style={styles.proofBtnText}>Payment history</Text>
               </Pressable>
             </View>
           </View>
@@ -494,22 +584,45 @@ export default function OrderDetail() {
             <PrimaryButton title={nextProgress.label} onPress={advanceProgress} style={styles.progressButton} />
           ) : null}
           {order.status === 'packed' ? (
-            <PrimaryButton
-              title="Mark as delivered"
-              onPress={() => router.push({ pathname: '/order/[id]/handover', params: { id: order.id } })}
-              style={styles.progressButton}
-            />
+            <>
+              <PrimaryButton
+                title="Mark as delivered"
+                disabled={order.pay !== 'paid'}
+                onPress={() => router.push({ pathname: '/order/[id]/handover', params: { id: order.id } })}
+                style={[styles.progressButton, order.pay !== 'paid' && { backgroundColor: colors.buttonDisabled }]}
+              />
+              {order.pay !== 'paid' ? (
+                <Text style={styles.deliverHint}>Only fully paid orders can be marked as delivered.</Text>
+              ) : null}
+            </>
           ) : null}
-          <OutlineButton title="Delete order" onPress={confirmDeleteOrder} />
+          <DangerButton title="Delete order" onPress={confirmDeleteOrder} disabled={!orderDeletable} />
+          {!orderDeletable ? (
+            <Text style={styles.deleteHint}>
+              {tripClosed
+                ? "Orders on a closed trip can't be deleted."
+                : "Fully paid orders can't be deleted. Mark as unpaid first."}
+            </Text>
+          ) : null}
         </View>
       </ScrollView>
 
       <LogPaymentSheet
-        visible={sheet}
+        visible={sheet && order.pay !== 'paid'}
         onClose={() => setSheet(false)}
         orderId={order.id}
         buyerName={order.buyer_name}
         balance={balance}
+      />
+
+      <PaymentHistorySheet
+        visible={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        orderId={order.id}
+        buyerName={order.buyer_name}
+        total={order.total}
+        paid={order.paid}
+        onLogPayment={() => setSheet(true)}
       />
 
       <Modal visible={!!editingItem} transparent animationType="slide" onRequestClose={() => setEditingItem(null)}>
@@ -605,20 +718,14 @@ export default function OrderDetail() {
                   </View>
                 )}
                 {viewingAttachment.uri ? (
-                  <PrimaryButton title="Open in another app" onPress={() => void openAttachmentExternally()} style={{ marginTop: 12 }} />
+                  <PrimaryButton title="Download" onPress={() => void openAttachmentExternally()} style={{ marginTop: 12 }} />
                 ) : null}
-                {viewingAttachment.orderAttachmentId ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      const attachment = attachments.find((item) => item.id === viewingAttachment.orderAttachmentId);
-                      if (attachment) confirmDeleteAttachment(attachment);
-                      setViewingAttachment(null);
-                    }}
-                    style={styles.viewerDelete}
-                  >
-                    <Text style={styles.viewerDeleteText}>Remove attachment</Text>
-                  </Pressable>
+                {canDeleteAttachment(viewingAttachment) ? (
+                  <DangerButton
+                    title={viewingAttachment.orderAttachmentId ? 'Delete attachment' : 'Remove receipt image'}
+                    onPress={() => confirmDeleteAttachment(viewingAttachment)}
+                    style={{ marginTop: 10 }}
+                  />
                 ) : null}
               </>
             ) : null}
@@ -662,10 +769,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.ink },
   missing: { fontFamily: fonts.regular, color: colors.white, padding: 20 },
   header: { backgroundColor: colors.ink, paddingHorizontal: spacing.screen, paddingTop: 6, paddingBottom: 18 },
-  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, marginTop: 14 },
   ref: { fontFamily: fonts.monoMedium, fontSize: 11, color: colors.onInk60, letterSpacing: 0.6 },
+  breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  crumbLink: { fontFamily: fonts.semibold, fontSize: 12, color: colors.white, textDecorationLine: 'underline' },
   buyer: { fontFamily: fonts.bold, fontSize: 24, letterSpacing: -0.6, color: colors.white },
-  contact: { fontFamily: fonts.regular, fontSize: 13, color: colors.onInk62, marginTop: 5 },
+  contacts: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 5 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  contact: { flexShrink: 1, fontFamily: fonts.regular, fontSize: 13, color: colors.onInk62 },
   badges: { flexDirection: 'row', gap: 7, marginTop: 14 },
 
   body: { backgroundColor: colors.background, paddingHorizontal: spacing.screen, paddingTop: 18, paddingBottom: 28, borderTopLeftRadius: 0 },
@@ -675,7 +786,7 @@ const styles = StyleSheet.create({
   addItemsText: { fontFamily: fonts.semibold, fontSize: 11.5, color: colors.ink },
 
   itemsCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderCard, borderRadius: radius.card, overflow: 'hidden', marginBottom: 16 },
-  itemRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 13, borderBottomWidth: 1, borderBottomColor: colors.hairline },
+  itemRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 13, borderBottomWidth: 1, borderBottomColor: colors.hairline, backgroundColor: colors.surface },
   itemThumb: { width: 46, height: 46, borderRadius: 9 },
   itemThumbPlaceholder: { width: 46, height: 46, borderRadius: 9, backgroundColor: colors.muted },
   itemName: { fontFamily: fonts.semibold, fontSize: 13.5, color: colors.ink },
@@ -683,7 +794,10 @@ const styles = StyleSheet.create({
   itemPrice: { fontFamily: fonts.semibold, fontSize: 13.5, color: colors.ink },
   itemRight: { alignItems: 'flex-end', gap: 7 },
   editItemText: { fontFamily: fonts.semibold, fontSize: 11.5, color: colors.infoFg },
-  deleteItemAction: { width: 62, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.errorFg },
+  swipeActions: { flexDirection: 'row', alignSelf: 'stretch' },
+  swipeAction: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  deleteAction: { backgroundColor: colors.errorBg },
+  deleteActionText: { fontFamily: fonts.semibold, fontSize: 10.5, color: colors.errorFg },
   totalsBlock: { padding: 13, backgroundColor: colors.surfaceSubtle, gap: 8 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalLabel: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.ink },
@@ -726,6 +840,7 @@ const styles = StyleSheet.create({
   weightInput: { flex: 1, fontFamily: fonts.monoSemibold },
   weightUnit: { fontFamily: fonts.monoMedium, fontSize: 12, color: colors.textMuted },
   weightError: { fontFamily: fonts.regular, fontSize: 11, color: colors.errorFg, marginTop: 5 },
+  weightHint: { fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted, marginTop: 5 },
   editorLabel: { fontFamily: fonts.medium, fontSize: 11.5, color: colors.textMuted, marginTop: 12, marginBottom: 7 },
   editorGrid: { flexDirection: 'row', gap: 10 },
   attachmentModal: { flex: 1, justifyContent: 'flex-end' },
@@ -743,9 +858,8 @@ const styles = StyleSheet.create({
   viewerImage: { width: '100%', height: 360, backgroundColor: colors.surfaceSubtle, borderRadius: radius.button },
   filePreview: { minHeight: 170, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: colors.surfaceSubtle, borderRadius: radius.button, padding: 18 },
   filePreviewText: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textMuted, textAlign: 'center' },
-  viewerDelete: { alignItems: 'center', paddingVertical: 12 },
-  viewerDeleteText: { fontFamily: fonts.semibold, fontSize: 12.5, color: colors.errorFg },
-  editPhotoButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: colors.borderInput, borderStyle: 'dashed', borderRadius: radius.input, padding: 7 },
+  attachmentDeleteIcon: { padding: 4 },
+  editPhotoButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: colors.borderInput, borderStyle: 'dashed', borderRadius: radius.input, padding: 7, marginTop: 10 },
   editPhotoPreview: { width: 40, height: 40, borderRadius: 6 },
   editPhotoText: { fontFamily: fonts.semibold, fontSize: 12.5, color: colors.ink },
 
@@ -758,6 +872,8 @@ const styles = StyleSheet.create({
   stepWhen: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted, marginTop: 3 },
   progressButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: colors.ink, borderRadius: radius.button, paddingVertical: 13, marginBottom: 10 },
   progressButtonText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.white },
+  deleteHint: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.textMuted, textAlign: 'center', marginTop: 8 },
+  deliverHint: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.errorFg, textAlign: 'center', marginTop: -4, marginBottom: 10 },
 
   actions: { flexDirection: 'row', gap: 9 },
 });

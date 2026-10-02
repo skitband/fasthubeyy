@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { useSQLiteContext } from 'expo-sqlite';
 import { BackHeader } from '@/components/layout';
+import { DangerButton } from '@/components/ui';
 import { useRefresh } from '@/db/hooks';
 import { exportDatabaseBackup, importDatabaseBackup } from '@/db/backup';
 import { resetDatabase } from '@/db/queries';
@@ -22,6 +24,7 @@ export default function Settings() {
     setIsBusy(true);
     try {
       const file = await exportDatabaseBackup(db);
+      if (!file) return;
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(file.uri, {
           mimeType: 'application/x-sqlite3',
@@ -138,15 +141,7 @@ export default function Settings() {
         <View style={styles.resetPanel}>
           <Text style={styles.resetTitle}>Reset database</Text>
           <Text style={styles.resetDescription}>Permanently erase all local trips, customers, orders, payments, and settings.</Text>
-          <Pressable
-            accessibilityRole="button"
-            disabled={isBusy}
-            onPress={confirmReset}
-            style={({ pressed }) => [styles.resetButton, pressed && styles.resetPressed, isBusy && styles.disabled]}
-          >
-            <MaterialIcons name="delete-forever" size={19} color={colors.white} />
-            <Text style={styles.resetButtonText}>Reset all data</Text>
-          </Pressable>
+          <DangerButton title="Reset all data" icon="delete-forever" onPress={confirmReset} disabled={isBusy} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -206,7 +201,4 @@ const styles = StyleSheet.create({
   resetPanel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.errorBg, borderRadius: radius.card, padding: 15 },
   resetTitle: { fontFamily: fonts.semibold, fontSize: 14, color: colors.ink },
   resetDescription: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.textMuted, marginTop: 6, marginBottom: 14 },
-  resetButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.errorFg, borderRadius: radius.button, paddingVertical: 13 },
-  resetPressed: { opacity: 0.85 },
-  resetButtonText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.white },
 });

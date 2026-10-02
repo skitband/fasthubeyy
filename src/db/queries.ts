@@ -4,6 +4,7 @@ import {
   itemSubtotal,
   nowISO,
   payStatus,
+  todayISO,
   uuid,
 } from '@/lib/money';
 import type {
@@ -16,6 +17,7 @@ import type {
   Payment,
   Request,
   Trip,
+  TripStatus,
 } from './types';
 
 export interface RequestView extends Request {
@@ -42,10 +44,22 @@ export function setActiveTrip(db: SQLiteDatabase, id: string): void {
   );
 }
 
+// Effective status: a manual override wins; otherwise a trip closes the day after its order cutoff.
+const TRIP_STATUS_SQL = `COALESCE(status_override, CASE WHEN cutoff_date < date('now', 'localtime') THEN 'closed' ELSE 'open' END)`;
+
+export function tripStatus(trip: Pick<Trip, 'status_override' | 'cutoff_date'>): TripStatus {
+  return trip.status_override ?? (trip.cutoff_date < todayISO() ? 'closed' : 'open');
+}
+
+/** Pass null to go back to automatic (cutoff-based) status. */
+export function setTripStatusOverride(db: SQLiteDatabase, id: string, status: TripStatus | null): void {
+  db.runSync('UPDATE trips SET status_override = ?, status = COALESCE(?, status), updated_at = ? WHERE id = ?', [status, status, nowISO(), id]);
+}
+
 export function listTrips(db: SQLiteDatabase): Trip[] {
   return db.getAllSync<Trip>(
     `SELECT * FROM trips WHERE deleted_at IS NULL
-     ORDER BY (status = 'open') DESC, created_at DESC`
+     ORDER BY (${TRIP_STATUS_SQL} = 'open') DESC, created_at DESC`
   );
 }
 
@@ -57,7 +71,7 @@ export function getActiveTrip(db: SQLiteDatabase): Trip | null {
   }
   return db.getFirstSync<Trip>(
     `SELECT * FROM trips WHERE deleted_at IS NULL
-     ORDER BY (status = 'open') DESC, created_at DESC LIMIT 1`
+     ORDER BY (${TRIP_STATUS_SQL} = 'open') DESC, created_at DESC LIMIT 1`
   );
 }
 
@@ -75,7 +89,9 @@ export function getBuyer(db: SQLiteDatabase, id: string): Buyer | null {
   return db.getFirstSync<Buyer>('SELECT * FROM buyers WHERE id = ?', [id]);
 }
 
-function assembleOrder(db: SQLiteDatabase, order: Order & { buyer_name: string; buyer_phone: string | null; buyer_channel: string | null }): OrderView {
+type OrderRow = Order & { buyer_name: string; buyer_phone: string | null; buyer_email: string | null; buyer_channel: string | null };
+
+function assembleOrder(db: SQLiteDatabase, order: OrderRow): OrderView {
   const items = db.getAllSync<OrderItem>(
     'SELECT * FROM order_items WHERE order_id = ? AND deleted_at IS NULL ORDER BY created_at ASC',
     [order.id]
@@ -109,12 +125,12 @@ function assembleOrder(db: SQLiteDatabase, order: Order & { buyer_name: string; 
 }
 
 const ORDER_SELECT = `
-  SELECT o.*, b.name AS buyer_name, b.phone AS buyer_phone, b.channel AS buyer_channel
+  SELECT o.*, b.name AS buyer_name, b.phone AS buyer_phone, b.email AS buyer_email, b.channel AS buyer_channel
   FROM orders o JOIN buyers b ON b.id = o.buyer_id
   WHERE o.deleted_at IS NULL`;
 
 export function listOrders(db: SQLiteDatabase, tripId: string): OrderView[] {
-  const rows = db.getAllSync<Order & { buyer_name: string; buyer_phone: string | null; buyer_channel: string | null }>(
+  const rows = db.getAllSync<OrderRow>(
     `${ORDER_SELECT} AND o.trip_id = ? ORDER BY o.created_at ASC`,
     [tripId]
   );
@@ -122,7 +138,7 @@ export function listOrders(db: SQLiteDatabase, tripId: string): OrderView[] {
 }
 
 export function getOrder(db: SQLiteDatabase, id: string): OrderView | null {
-  const row = db.getFirstSync<Order & { buyer_name: string; buyer_phone: string | null; buyer_channel: string | null }>(
+  const row = db.getFirstSync<OrderRow>(
     `${ORDER_SELECT} AND o.id = ? LIMIT 1`,
     [id]
   );
@@ -130,7 +146,11 @@ export function getOrder(db: SQLiteDatabase, id: string): OrderView | null {
 }
 
 export function canAddItemsToOrder(order: Pick<OrderView, 'pay' | 'status'> | null): boolean {
-  return !!order && !(order.pay === 'paid' && order.status === 'delivered');
+  return !!order && order.pay !== 'paid' && order.status !== 'delivered';
+}
+
+export function canDeleteOrder(order: Pick<OrderView, 'pay'> | null): boolean {
+  return !!order && order.pay !== 'paid';
 }
 
 export function listRequests(db: SQLiteDatabase, tripId: string): RequestView[] {
@@ -172,6 +192,10 @@ export function deleteOrderAttachment(db: SQLiteDatabase, attachmentId: string):
   db.runSync('DELETE FROM order_attachments WHERE id = ?', [attachmentId]);
 }
 
+export function clearPaymentProof(db: SQLiteDatabase, paymentId: string): void {
+  db.runSync('UPDATE payments SET proof_uri = NULL, updated_at = ? WHERE id = ?', [nowISO(), paymentId]);
+}
+
 export function listOrderEvents(db: SQLiteDatabase, orderId: string): OrderEvent[] {
   return db.getAllSync<OrderEvent>(
     'SELECT * FROM order_events WHERE order_id = ? ORDER BY at ASC',
@@ -179,22 +203,22 @@ export function listOrderEvents(db: SQLiteDatabase, orderId: string): OrderEvent
   );
 }
 
-/** Luggage kg used = sum item kg*qty for orders on trip not yet delivered. */
+/** Luggage kg used = total order weight across every order on the trip, delivered or not. */
 export function luggageUsed(orders: OrderView[]): number {
-  return orders.filter((o) => o.status !== 'delivered').reduce((a, o) => a + o.kg, 0);
+  return orders.reduce((a, o) => a + o.kg, 0);
 }
 
 // ---- Mutations ----
 
 export function addPayment(
   db: SQLiteDatabase,
-  input: { orderId: string; amount: number; method: string; reference?: string; proofUri?: string }
+  input: { orderId: string; amount: number; method: string; reference?: string; proofUri?: string; note?: string }
 ): void {
   const now = nowISO();
   db.runSync(
-    `INSERT INTO payments (id, order_id, amount, method, reference, proof_uri, paid_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [uuid(), input.orderId, input.amount, input.method, input.reference ?? null, input.proofUri ?? null, now, now, now]
+    `INSERT INTO payments (id, order_id, amount, method, reference, proof_uri, note, paid_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [uuid(), input.orderId, input.amount, input.method, input.reference ?? null, input.proofUri ?? null, input.note ?? null, now, now, now]
   );
 }
 
@@ -210,6 +234,11 @@ export function markOrderFullyPaid(db: SQLiteDatabase, orderId: string): void {
 export function markOrderUnpaid(db: SQLiteDatabase, orderId: string): void {
   const now = nowISO();
   db.runSync('UPDATE payments SET deleted_at = ?, updated_at = ? WHERE order_id = ?', [now, now, orderId]);
+}
+
+export function deletePayment(db: SQLiteDatabase, paymentId: string): void {
+  const now = nowISO();
+  db.runSync('UPDATE payments SET deleted_at = ?, updated_at = ? WHERE id = ?', [now, now, paymentId]);
 }
 
 export function setOrderStatus(db: SQLiteDatabase, orderId: string, status: string, note?: string): void {
@@ -387,13 +416,34 @@ export function deleteOrder(db: SQLiteDatabase, orderId: string): void {
   });
 }
 
+export function countTripOrders(db: SQLiteDatabase, tripId: string): number {
+  const row = db.getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM orders WHERE trip_id = ? AND deleted_at IS NULL', [tripId]);
+  return row?.n ?? 0;
+}
+
+/** Soft-deletes a trip with its orders, items, payments and requests. */
+export function deleteTrip(db: SQLiteDatabase, tripId: string): void {
+  const now = nowISO();
+  const orderScope = 'order_id IN (SELECT id FROM orders WHERE trip_id = ?)';
+  db.withTransactionSync(() => {
+    db.runSync(`UPDATE order_items SET deleted_at = ?, updated_at = ? WHERE ${orderScope} AND deleted_at IS NULL`, [now, now, tripId]);
+    db.runSync(`UPDATE payments SET deleted_at = ?, updated_at = ? WHERE ${orderScope} AND deleted_at IS NULL`, [now, now, tripId]);
+    db.runSync('UPDATE orders SET deleted_at = ?, updated_at = ? WHERE trip_id = ? AND deleted_at IS NULL', [now, now, tripId]);
+    db.runSync('UPDATE requests SET deleted_at = ?, updated_at = ? WHERE trip_id = ? AND deleted_at IS NULL', [now, now, tripId]);
+    db.runSync('UPDATE trips SET deleted_at = ?, updated_at = ? WHERE id = ?', [now, now, tripId]);
+    db.runSync("DELETE FROM settings WHERE key = 'active_trip_id' AND value = ?", [tripId]);
+  });
+}
+
 /** The active (non-delivered) order for a buyer on a trip, if any. */
 export function findOpenOrderForBuyer(db: SQLiteDatabase, tripId: string, buyerId: string): Order | null {
-  return db.getFirstSync<Order>(
+  const rows = db.getAllSync<Order>(
     `SELECT * FROM orders WHERE deleted_at IS NULL AND trip_id = ? AND buyer_id = ? AND status != 'delivered'
-     ORDER BY created_at DESC LIMIT 1`,
+     ORDER BY created_at DESC`,
     [tripId, buyerId]
   );
+  // Paid status is derived from payments, so fully paid orders are filtered out here.
+  return rows.find((row) => canAddItemsToOrder(getOrder(db, row.id))) ?? null;
 }
 
 /** Accept a request: ensure buyer + order + item, mark request accepted; returns order id. */
@@ -455,4 +505,18 @@ export function createTrip(
   );
   setActiveTrip(db, id);
   return id;
+}
+
+export function updateTrip(
+  db: SQLiteDatabase,
+  id: string,
+  input: Parameters<typeof createTrip>[1]
+): void {
+  db.runSync(
+    `UPDATE trips SET origin = ?, destination = ?, depart_date = ?, return_date = ?, cutoff_date = ?,
+      checked_kg = ?, cabin_kg = ?, fee_pct = ?, fee_per_kg = ?, updated_at = ?
+     WHERE id = ?`,
+    [input.origin, input.destination, input.departDate, input.returnDate, input.cutoffDate,
+      input.checkedKg, input.cabinKg, input.feePct, input.feePerKg, nowISO(), id]
+  );
 }

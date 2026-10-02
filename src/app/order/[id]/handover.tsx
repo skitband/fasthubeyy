@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
 import { BackHeader, Screen } from '@/components/layout';
 import { Input } from '@/components/ui';
 import { useDbData, useRefresh } from '@/db/hooks';
-import { getOrder, markOrderFullyPaid, setOrderStatus, updateOrderShipment } from '@/db/queries';
+import { getOrder, setOrderStatus, updateOrderShipment } from '@/db/queries';
 import { colors, fonts, radius } from '@/theme/tokens';
-import { spacedCode } from '@/lib/money';
+import { peso, spacedCode } from '@/lib/money';
+import { toDataUri } from '@/lib/dataUri';
 
 const CHECKLIST = [
   { id: 'c1', label: 'All items checked against the order' },
@@ -38,7 +40,8 @@ export default function Handover() {
   }
 
   const allChecked = CHECKLIST.every((c) => checked[c.id]);
-  const canComplete = allChecked && !!deliveryProofUri;
+  const fullyPaid = order.pay === 'paid';
+  const canComplete = fullyPaid && allChecked && !!deliveryProofUri;
   const orderId = order.id;
   const firstName = order.buyer_name.split(' ')[0];
 
@@ -49,16 +52,20 @@ export default function Handover() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
-    if (!result.canceled) setDeliveryProofUri(result.assets[0].uri);
+    if (!result.canceled) setDeliveryProofUri(await toDataUri(result.assets[0].uri, result.assets[0].mimeType));
   }
 
   function complete() {
     if (!canComplete || !deliveryProofUri) return;
-    db.withTransactionSync(() => {
-      updateOrderShipment(db, orderId, { trackingCode, deliveryProofUri });
-      markOrderFullyPaid(db, orderId);
-      setOrderStatus(db, orderId, 'delivered', trackingCode.trim() ? `Tracking ${trackingCode.trim()}` : 'Handed over');
-    });
+    try {
+      db.withTransactionSync(() => {
+        updateOrderShipment(db, orderId, { trackingCode, deliveryProofUri });
+        setOrderStatus(db, orderId, 'delivered', trackingCode.trim() ? `Tracking ${trackingCode.trim()}` : 'Handed over');
+      });
+    } catch (error) {
+      Alert.alert('Could not mark as delivered', String(error));
+      return;
+    }
     refresh();
     router.replace('/orders');
   }
@@ -113,7 +120,13 @@ export default function Handover() {
         style={[styles.cta, { backgroundColor: canComplete ? colors.ink : colors.buttonDisabled }]}
       >
         <Text style={styles.ctaText}>
-          {!allChecked ? 'Finish the checklist first' : !deliveryProofUri ? 'Attach delivery proof first' : 'Mark delivered'}
+          {!fullyPaid
+            ? `Collect ${peso(order.total - order.paid)} first`
+            : !allChecked
+              ? 'Finish the checklist first'
+              : !deliveryProofUri
+                ? 'Attach delivery proof first'
+                : 'Mark delivered'}
         </Text>
       </Pressable>
     </Screen>

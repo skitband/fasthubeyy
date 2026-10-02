@@ -7,8 +7,11 @@ import { Screen, SectionHeader } from '@/components/layout';
 import { Card, ProgressBar } from '@/components/ui';
 import { OrderCard } from '@/components/OrderCard';
 import { TripPickerSheet } from '@/components/TripPickerSheet';
+import { NoActiveTrip } from '@/components/NoActiveTrip';
 import { useDbData, useRefresh } from '@/db/hooks';
-import { getActiveTrip, listOrders, listTrips, luggageUsed, setActiveTrip } from '@/db/queries';
+import { countTripOrders, deleteTrip, getActiveTrip, listOrders, listTrips, luggageUsed, setActiveTrip, tripStatus } from '@/db/queries';
+import type { Trip } from '@/db/types';
+import { Alert } from '@/lib/alert';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { dateRange, daysBetween, kgLabel, peso, shortDate, todayISO } from '@/lib/money';
 
@@ -31,16 +34,30 @@ export default function TripHub() {
     refresh();
   }
 
-  if (!data.trip) {
-    return (
-      <Screen refreshable>
-        <Text style={styles.emptyTitle}>No active trip</Text>
-        <Text style={styles.emptyBody}>Create a trip to start taking orders.</Text>
-        <Pressable style={styles.emptyBtn} onPress={() => router.push('/trip/new')}>
-          <Text style={styles.emptyBtnText}>+ New trip</Text>
-        </Pressable>
-      </Screen>
+  function confirmDeleteTrip(trip: Trip) {
+    const route = `${trip.origin.split(',')[0]} \u2192 ${trip.destination.split(',')[0]}`;
+    const orderCount = countTripOrders(db, trip.id);
+    Alert.alert(
+      'Delete trip?',
+      orderCount > 0
+        ? `${route} and its ${orderCount} order${orderCount === 1 ? '' : 's'} (items and payments) will be deleted. This cannot be undone.`
+        : `${route} will be deleted. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteTrip(db, trip.id);
+            refresh();
+          },
+        },
+      ]
     );
+  }
+
+  if (!data.trip) {
+    return <NoActiveTrip />;
   }
 
   const { trip, trips, orders } = data;
@@ -60,7 +77,7 @@ export default function TripHub() {
           <Text style={styles.kicker}>Active trip</Text>
           <View style={styles.routeRow}>
             <Text style={styles.route}>{route}</Text>
-            <MaterialIcons name="unfold-more" size={20} color={colors.textMuted} />
+            <MaterialIcons name="unfold-more" size={25} color={colors.ink} />
           </View>
           <Text style={styles.dates}>{dateRange(trip.depart_date, trip.return_date)}</Text>
         </Pressable>
@@ -116,10 +133,16 @@ export default function TripHub() {
         {orders.length === 0 ? (
           <Card>
             <Text style={styles.clearTitle}>No orders yet</Text>
-            <Text style={styles.clearBody}>Add your first order for this trip to start tracking items and payments.</Text>
-            <Pressable style={styles.emptyBtn} onPress={() => router.push('/order/add')}>
-              <Text style={styles.emptyBtnText}>+ Add order</Text>
-            </Pressable>
+            {tripStatus(trip) === 'closed' ? (
+              <Text style={styles.clearBody}>This trip is closed to new orders. Reopen it from Edit trip to add orders.</Text>
+            ) : (
+              <>
+                <Text style={styles.clearBody}>Add your first order for this trip to start tracking items and payments.</Text>
+                <Pressable style={styles.emptyBtn} onPress={() => router.push('/order/add')}>
+                  <Text style={styles.emptyBtnText}>+ Add order</Text>
+                </Pressable>
+              </>
+            )}
           </Card>
         ) : attention.length === 0 ? (
           <Card>
@@ -139,6 +162,11 @@ export default function TripHub() {
         trips={trips}
         activeId={trip.id}
         onSelect={selectTrip}
+        onEdit={(t) => {
+          setPickerOpen(false);
+          router.push({ pathname: '/trip/new', params: { id: t.id } });
+        }}
+        onDelete={confirmDeleteTrip}
         onNew={() => {
           setPickerOpen(false);
           router.push('/trip/new');
@@ -150,7 +178,7 @@ export default function TripHub() {
 
 const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
+  routeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
   newTripBtn: {
     width: 40,
     height: 40,
@@ -158,8 +186,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 20,
   },
-  kicker: { fontFamily: fonts.medium, fontSize: 12, color: colors.textMuted },
+  kicker: { fontFamily: fonts.medium, fontSize: 12, color: colors.textMuted, marginTop: 20 },
   route: { fontFamily: fonts.bold, fontSize: 27, letterSpacing: -0.6, color: colors.ink },
   dates: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginTop: 5 },
 
@@ -190,8 +219,6 @@ const styles = StyleSheet.create({
   clearTitle: { fontFamily: fonts.semibold, fontSize: 14.5, color: colors.ink },
   clearBody: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textMuted, marginTop: 6 },
 
-  emptyTitle: { fontFamily: fonts.bold, fontSize: 22, color: colors.ink, marginTop: 40 },
-  emptyBody: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginTop: 8 },
   emptyBtn: { marginTop: 20, backgroundColor: colors.ink, borderRadius: radius.button, paddingVertical: 15, alignItems: 'center' },
   emptyBtnText: { fontFamily: fonts.semibold, fontSize: 14.5, color: colors.white },
 });

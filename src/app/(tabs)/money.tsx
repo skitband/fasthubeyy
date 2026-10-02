@@ -3,14 +3,16 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, Badge } from '@/components/ui';
 import { LogPaymentSheet } from '@/components/LogPaymentSheet';
+import { PaymentHistorySheet } from '@/components/PaymentHistorySheet';
+import { NoActiveTrip } from '@/components/NoActiveTrip';
 import { useDbData, usePullToRefresh } from '@/db/hooks';
 import { getActiveTrip, listOrders } from '@/db/queries';
-import type { OrderView } from '@/db/types';
 import { colors, fonts, PAY, radius, spacing } from '@/theme/tokens';
 import { initials, peso } from '@/lib/money';
 
 export default function Money() {
-  const [target, setTarget] = useState<OrderView | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<'history' | 'log' | null>(null);
   const { refreshing, onRefresh } = usePullToRefresh();
   const data = useDbData((db) => {
     const trip = getActiveTrip(db);
@@ -19,13 +21,7 @@ export default function Money() {
   });
 
   if (!data) {
-    return (
-      <SafeAreaView edges={['top']} style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-          <Text style={styles.empty}>No active trip.</Text>
-        </ScrollView>
-      </SafeAreaView>
-    );
+    return <NoActiveTrip />;
   }
 
   const { trip, orders } = data;
@@ -36,12 +32,13 @@ export default function Money() {
   const notPaid = Math.max(0, owed - partial);
   const pct = (n: number) => (totalDue ? (n / totalDue) * 100 : 0);
   const shortRoute = `${trip.origin.split(',')[0]} \u2192 ${trip.destination.split(',')[1]?.trim() ?? trip.destination}`;
+  const target = orders.find((o) => o.id === selectedId) ?? null;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         <Text style={styles.title}>Payments</Text>
-        <Text style={styles.subtitle}>{`${shortRoute} \u00B7 tap a row to log a receipt`}</Text>
+        <Text style={styles.subtitle}>{`${shortRoute}`}</Text>
 
         <View style={styles.summaryCard}>
           <View style={styles.bar}>
@@ -63,7 +60,10 @@ export default function Money() {
             return (
               <Pressable
                 key={o.id}
-                onPress={() => setTarget(o)}
+                onPress={() => {
+                  setSelectedId(o.id);
+                  setSheet('history');
+                }}
                 style={({ pressed }) => [styles.ledgerRow, pressed && { borderColor: colors.borderHover }]}
               >
                 <Avatar label={initials(o.buyer_name)} size={34} />
@@ -85,9 +85,19 @@ export default function Money() {
         </View>
       </ScrollView>
 
+      <PaymentHistorySheet
+        visible={sheet === 'history' && !!target}
+        onClose={() => setSheet(null)}
+        orderId={target?.id ?? null}
+        buyerName={target?.buyer_name ?? ''}
+        total={target?.total ?? 0}
+        paid={target?.paid ?? 0}
+        onLogPayment={() => setSheet('log')}
+      />
+
       <LogPaymentSheet
-        visible={!!target}
-        onClose={() => setTarget(null)}
+        visible={sheet === 'log' && !!target}
+        onClose={() => setSheet(null)}
         orderId={target?.id ?? null}
         buyerName={target?.buyer_name ?? ''}
         balance={target ? Math.max(0, target.total - target.paid) : 0}
@@ -108,8 +118,7 @@ function LegendRow({ color, label, value }: { color: string; label: string; valu
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.screen, paddingTop: 6, paddingBottom: 28 },
-  empty: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, padding: spacing.screen },
+  content: { paddingHorizontal: spacing.screen, paddingTop: 6, paddingBottom: 28, marginTop: 20 },
   title: { fontFamily: fonts.bold, fontSize: 25, letterSpacing: -0.6, color: colors.ink, marginBottom: 5 },
   subtitle: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textMuted, marginBottom: 16 },
   summaryCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderCard, borderRadius: radius.hero, padding: 16, marginBottom: 14 },

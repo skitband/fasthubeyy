@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +17,8 @@ import { addPayment } from '@/db/queries';
 import { useRefresh } from '@/db/hooks';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { peso } from '@/lib/money';
+import { Alert } from '@/lib/alert';
+import { toDataUri } from '@/lib/dataUri';
 import type { PayMethod } from '@/db/types';
 
 const METHODS: { key: PayMethod; label: string }[] = [
@@ -42,15 +43,21 @@ export function LogPaymentSheet({
   const db = useSQLiteContext();
   const { refresh } = useRefresh();
   const [amount, setAmount] = useState('');
+  const [amountError, setAmountError] = useState<string | null>(null);
   const [method, setMethod] = useState<PayMethod>('gcash');
   const [reference, setReference] = useState('');
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
   const [proofUri, setProofUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       setAmount(balance > 0 ? String(Math.round(balance)) : '');
+      setAmountError(null);
       setMethod('gcash');
       setReference('');
+      setReferenceError(null);
+      setNote('');
       setProofUri(null);
     }
   }, [visible, balance]);
@@ -62,17 +69,31 @@ export function LogPaymentSheet({
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
-    if (!result.canceled) setProofUri(result.assets[0].uri);
+    if (!result.canceled) setProofUri(await toDataUri(result.assets[0].uri, result.assets[0].mimeType));
   }
 
   function submit() {
     if (!orderId) return;
-    const amt = parseFloat(amount) || 0;
-    if (amt <= 0) {
-      Alert.alert('Amount required', 'Enter an amount greater than zero.');
-      return;
-    }
-    addPayment(db, { orderId, amount: amt, method, reference: reference.trim() || undefined, proofUri: proofUri ?? undefined });
+    const trimmed = amount.trim();
+    const amt = Number(trimmed);
+    const ref = reference.trim();
+    const amtError = !trimmed
+      ? 'Amount is required'
+      : !Number.isFinite(amt) || amt <= 0
+        ? 'Enter an amount greater than zero'
+        : null;
+    const refError = ref ? null : 'Reference is required';
+    setAmountError(amtError);
+    setReferenceError(refError);
+    if (amtError || refError) return;
+    addPayment(db, {
+      orderId,
+      amount: amt,
+      method,
+      reference: ref,
+      proofUri: proofUri ?? undefined,
+      note: note.trim() || undefined,
+    });
     refresh();
     onClose();
   }
@@ -105,8 +126,17 @@ export function LogPaymentSheet({
               {balance > 0 ? ` \u00B7 ${peso(balance)} balance` : ''}
             </Text>
 
-            <Text style={styles.label}>Amount</Text>
-            <Input value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ fontFamily: fonts.monoSemibold }} />
+            <Text style={styles.label}>Amount *</Text>
+            <Input
+              value={amount}
+              onChangeText={(value) => {
+                setAmount(value);
+                if (amountError) setAmountError(null);
+              }}
+              keyboardType="decimal-pad"
+              style={{ fontFamily: fonts.monoSemibold }}
+            />
+            {amountError ? <Text style={styles.error}>{amountError}</Text> : null}
 
             <Text style={styles.label}>Method</Text>
             <View style={styles.methods}>
@@ -126,8 +156,25 @@ export function LogPaymentSheet({
               })}
             </View>
 
-            <Text style={styles.label}>Reference (optional)</Text>
-            <Input value={reference} onChangeText={setReference} placeholder="e.g. GCash ref 8842 1190" />
+            <Text style={styles.label}>Reference *</Text>
+            <Input
+              value={reference}
+              onChangeText={(value) => {
+                setReference(value);
+                if (referenceError) setReferenceError(null);
+              }}
+              placeholder="reference no."
+            />
+            {referenceError ? <Text style={styles.error}>{referenceError}</Text> : null}
+
+            <Text style={styles.label}>Notes (optional)</Text>
+            <Input
+              value={note}
+              onChangeText={setNote}
+              placeholder="e.g. Downpayment, balance due on handover"
+              multiline
+              style={styles.noteInput}
+            />
 
             <Pressable style={styles.attach} onPress={attach}>
               <MaterialIcons name={proofUri ? 'check-circle' : 'add-a-photo'} size={18} color={proofUri ? colors.successFg : colors.textMuted} />
@@ -169,7 +216,9 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.bold, fontSize: 20, letterSpacing: -0.3, color: colors.ink },
   sub: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textMuted, marginTop: 4, marginBottom: 8 },
   label: { fontFamily: fonts.medium, fontSize: 11.5, color: colors.textMuted, marginTop: 12, marginBottom: 7 },
+  error: { fontFamily: fonts.regular, fontSize: 11, color: colors.errorFg, marginTop: 5 },
   methods: { flexDirection: 'row', gap: 8 },
+  noteInput: { minHeight: 72, textAlignVertical: 'top' },
   method: { flex: 1, alignItems: 'center', borderRadius: radius.input, borderWidth: 1, paddingVertical: 12 },
   attach: {
     flexDirection: 'row',

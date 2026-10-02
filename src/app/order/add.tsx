@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Slider from '@react-native-community/slider';
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { MaterialIcons } from '@expo/vector-icons';
 import { FieldArray, Formik, getIn, type FormikProps } from 'formik';
 import { useSQLiteContext } from 'expo-sqlite';
 import { BackHeader, Screen } from '@/components/layout';
-import { Input, PrimaryButton } from '@/components/ui';
+import { DangerIconButton, Input, PrimaryButton } from '@/components/ui';
 import { CustomerSelect } from '@/components/CustomerSelect';
 import { useDbData, useRefresh } from '@/db/hooks';
 import {
@@ -19,10 +20,12 @@ import {
   getOrder,
   getTrip,
   listBuyers,
+  tripStatus,
 } from '@/db/queries';
 import { orderValidationSchema, type OrderFormValues } from '@/lib/formSchemas';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { itemSubtotal, peso } from '@/lib/money';
+import { toDataUri } from '@/lib/dataUri';
 
 export default function AddItem() {
   const router = useRouter();
@@ -57,11 +60,20 @@ export default function AddItem() {
     );
   }
 
+  if (tripStatus(setup.trip) === 'closed') {
+    return (
+      <Screen>
+        <BackHeader title={setup.targetOrder ? 'Add items' : 'Add order'} />
+        <Text style={styles.hint}>{"This trip is closed, so new orders and items can't be added. Reopen it from Edit trip to continue."}</Text>
+      </Screen>
+    );
+  }
+
   if (setup.targetOrder && !canAddItemsToOrder(setup.targetOrder)) {
     return (
       <Screen>
         <BackHeader title="Add items" />
-        <Text style={styles.hint}>This order is fully paid and handed over, so no more items can be added.</Text>
+        <Text style={styles.hint}>This order is fully paid or delivered, so no more items can be added.</Text>
       </Screen>
     );
   }
@@ -80,14 +92,15 @@ export default function AddItem() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
     if (!result.canceled) {
-      await setFieldValue(`items.${itemIndex}.photoUri`, result.assets[0].uri);
+      const asset = result.assets[0];
+      await setFieldValue(`items.${itemIndex}.photoUri`, await toDataUri(asset.uri, asset.mimeType));
     }
   }
 
   function save(values: OrderFormValues) {
     const targetOrder = targetOrderId ? getOrder(db, targetOrderId) : null;
     if (targetOrderId && !canAddItemsToOrder(targetOrder)) {
-      Alert.alert('Order is complete', 'Items cannot be added to an order that is fully paid and handed over.');
+      Alert.alert('Order is closed', 'Items cannot be added to an order that is fully paid or delivered.');
       return;
     }
     const existing = targetOrder ?? findOpenOrderForBuyer(db, trip.id, values.buyerId);
@@ -127,7 +140,7 @@ export default function AddItem() {
 
   return (
     <Screen>
-      <BackHeader title={setup.targetOrder ? 'Add items' : 'Add order'} />
+      <BackHeader title={setup.targetOrder ? 'Add items' : 'New order'} />
       <Text style={styles.hint}>Add multiple items for one customer order. Set total weight from the order details.</Text>
 
       <Formik<OrderFormValues>
@@ -140,7 +153,7 @@ export default function AddItem() {
         validationSchema={orderValidationSchema}
         onSubmit={save}
       >
-        {({ values, errors, touched, handleChange, handleBlur, handleSubmit, setFieldValue, setFieldTouched }) => {
+        {({ values, errors, touched, handleChange, handleBlur, handleSubmit, setFieldValue, setFieldTouched, setValues }) => {
           const subtotal = values.items.reduce(
             (total, item) => total + itemSubtotal(Number(item.cost) || 0, Number(item.qty) || 0),
             0
@@ -176,10 +189,10 @@ export default function AddItem() {
                   buyers={setup.buyers}
                   value={values.buyerId || null}
                   onChange={(id) => {
-                    void setFieldValue('buyerId', id);
-                    void setFieldTouched('buyerId', true);
                     const existing = findOpenOrderForBuyer(db, trip.id, id);
-                    void setFieldValue('weightKg', existing ? String(existing.weight_kg) : '');
+                    // One update so validation sees both new values; Formik's per-field setters validate against stale render state.
+                    void setValues({ ...values, buyerId: id, weightKg: existing ? String(existing.weight_kg) : '' });
+                    void setFieldTouched('buyerId', true, false);
                   }}
                 />
               )}
@@ -207,14 +220,7 @@ export default function AddItem() {
                           <View style={styles.itemCardHeader}>
                             <Text style={styles.itemTitle}>{`Item ${index + 1}`}</Text>
                             {values.items.length > 1 ? (
-                              <Pressable
-                                accessibilityRole="button"
-                                accessibilityLabel={`Remove item ${index + 1}`}
-                                hitSlop={8}
-                                onPress={() => arrayHelpers.remove(index)}
-                              >
-                                <MaterialIcons name="delete-outline" size={20} color={colors.errorFg} />
-                              </Pressable>
+                              <DangerIconButton accessibilityLabel={`Remove item ${index + 1}`} onPress={() => arrayHelpers.remove(index)} />
                             ) : null}
                           </View>
                           <View style={styles.itemTopRow}>

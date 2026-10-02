@@ -1,3 +1,4 @@
+const http = require('http');
 const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
@@ -6,10 +7,12 @@ const config = getDefaultConfig(__dirname);
 config.resolver.assetExts.push('wasm');
 
 // expo-sqlite on web needs SharedArrayBuffer, which requires cross-origin isolation.
-config.server.enhanceMiddleware = (middleware) => (req, res, next) => {
-  res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  middleware(req, res, next);
+// Patched at the http level because Expo serves the HTML before `enhanceMiddleware` runs.
+const originalWriteHead = http.ServerResponse.prototype.writeHead;
+http.ServerResponse.prototype.writeHead = function (...args) {
+  this.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+  this.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  return originalWriteHead.apply(this, args);
 };
 
 module.exports = config;

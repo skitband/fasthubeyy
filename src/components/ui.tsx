@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
 import {
   Pressable,
   StyleSheet,
@@ -21,9 +22,9 @@ export function Avatar({ label, size = 38, bg = colors.muted, fg = colors.ink }:
   );
 }
 
-export function Badge({ bg, fg, label }: { bg: string; fg: string; label: string }) {
+export function Badge({ bg, fg, label, style }: { bg: string; fg: string; label: string; style?: StyleProp<ViewStyle> }) {
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
+    <View style={[styles.badge, { backgroundColor: bg }, style]}>
       <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: 10.5 }}>{label}</Text>
     </View>
   );
@@ -85,18 +86,75 @@ export function PrimaryButton({
 export function OutlineButton({
   title,
   onPress,
+  disabled,
   style,
 }: {
   title: string;
   onPress?: () => void;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.outlineBtn, pressed && { backgroundColor: colors.background }, style]}
+      disabled={disabled}
+      style={({ pressed }) => [styles.outlineBtn, pressed && !disabled && { backgroundColor: colors.background }, disabled && { opacity: 0.45 }, style]}
     >
       <Text style={styles.outlineBtnText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
+
+/** Red-outline button used for every destructive action. */
+export function DangerButton({
+  title,
+  onPress,
+  disabled,
+  icon = 'delete-outline',
+  style,
+}: {
+  title: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  icon?: IconName;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.dangerBtn, pressed && !disabled && { backgroundColor: colors.errorBg }, disabled && { opacity: 0.45 }, style]}
+    >
+      <MaterialIcons name={icon} size={19} color={colors.errorFg} />
+      <Text style={styles.dangerBtnText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** Plain red trash icon for row-level deletes (outline is reserved for text buttons). */
+export function DangerIconButton({
+  onPress,
+  accessibilityLabel,
+  icon = 'delete-outline',
+  style,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  icon?: IconName;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [styles.dangerIconBtn, pressed && { opacity: 0.6 }, style]}
+    >
+      <MaterialIcons name={icon} size={20} color={colors.errorFg} />
     </Pressable>
   );
 }
@@ -156,6 +214,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   outlineBtnText: { color: colors.ink, fontFamily: fonts.semibold, fontSize: 13.5 },
+  dangerBtn: {
+    flexDirection: 'row',
+    gap: 6,
+    borderRadius: radius.button,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.errorFg,
+    backgroundColor: colors.surface,
+  },
+  dangerBtnText: { color: colors.errorFg, fontFamily: fonts.semibold, fontSize: 13.5 },
+  dangerIconBtn: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.borderInput,

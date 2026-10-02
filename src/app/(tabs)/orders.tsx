@@ -5,12 +5,13 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Sty
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OrderCard } from '@/components/OrderCard';
+import { NoActiveTrip } from '@/components/NoActiveTrip';
 import { Input } from '@/components/ui';
 import { useDbData, usePullToRefresh } from '@/db/hooks';
 import { getActiveTrip, listOrders, luggageUsed } from '@/db/queries';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 
-const FILTERS = ['All', 'Unpaid', 'Requested', 'Bought', 'Delivered'] as const;
+const FILTERS = ['All', 'Unpaid', 'Paid', 'Bought', 'Packed', 'Delivered'] as const;
 type Filter = (typeof FILTERS)[number];
 const PAGE_SIZE = 10;
 
@@ -29,13 +30,7 @@ export default function OrdersBoard() {
   });
 
   if (!data) {
-    return (
-      <SafeAreaView edges={['top']} style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-          <Text style={styles.empty}>No active trip yet.</Text>
-        </ScrollView>
-      </SafeAreaView>
-    );
+    return <NoActiveTrip />;
   }
 
   const { trip, orders } = data;
@@ -44,6 +39,7 @@ export default function OrdersBoard() {
   const filtered = orders.filter((o) => {
     if (filter === 'All') return true;
     if (filter === 'Unpaid') return o.pay !== 'paid';
+    if (filter === 'Paid') return o.pay === 'paid';
     return o.status === filter.toLowerCase();
   }).filter((o) => {
     if (!normalizedSearch) return true;
@@ -81,7 +77,7 @@ export default function OrdersBoard() {
         <View style={styles.titleRow}>
           <Text style={styles.title}>Orders</Text>
           <Pressable style={styles.addBtn} onPress={() => router.push('/order/add')}>
-            <Text style={styles.addBtnText}>+ Add order</Text>
+            <Text style={styles.addBtnText}>+ New order</Text>
           </Pressable>
         </View>
         <Text style={styles.subtitle}>
@@ -151,8 +147,8 @@ export default function OrdersBoard() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  headerPad: { paddingHorizontal: spacing.screen, paddingTop: 6 },
-  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
+  headerPad: { paddingHorizontal: spacing.screen, paddingTop: 6, marginTop: 20 },
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   title: { fontFamily: fonts.bold, fontSize: 25, letterSpacing: -0.6, color: colors.ink },
   addBtn: { backgroundColor: colors.ink, borderRadius: radius.button, paddingVertical: 9, paddingHorizontal: 14 },
   addBtnText: { fontFamily: fonts.semibold, fontSize: 12.5, color: colors.white },
@@ -169,7 +165,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  list: { paddingHorizontal: spacing.screen, paddingBottom: 24, gap: 9 },
-  empty: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, paddingHorizontal: spacing.screen, marginTop: 20 },
+  list: { paddingHorizontal: spacing.screen, paddingBottom: 24, gap: 9, marginTop: 20 },
+  empty: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMuted, paddingHorizontal: spacing.screen, marginTop: 20 },
   loadingMore: { paddingVertical: 14 },
 });

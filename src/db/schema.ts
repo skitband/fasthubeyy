@@ -1,7 +1,10 @@
+import { Platform } from 'react-native';
+import { File } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { toDataUri } from '@/lib/dataUri';
 import { itemFee, itemKg, itemSubtotal, nowISO } from '@/lib/money';
 
-export const DATABASE_VERSION = 4;
+export const DATABASE_VERSION = 5;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = 'wal';
@@ -12,7 +15,7 @@ CREATE TABLE IF NOT EXISTS trips (
   depart_date TEXT NOT NULL, return_date TEXT NOT NULL, cutoff_date TEXT NOT NULL,
   checked_kg REAL NOT NULL DEFAULT 30, cabin_kg REAL NOT NULL DEFAULT 7,
   fee_pct REAL NOT NULL DEFAULT 15, fee_per_kg REAL NOT NULL DEFAULT 150,
-  excess_per_kg REAL DEFAULT 1250, status TEXT NOT NULL DEFAULT 'open',
+  excess_per_kg REAL DEFAULT 1250, status TEXT NOT NULL DEFAULT 'open', status_override TEXT,
   created_at TEXT, updated_at TEXT, deleted_at TEXT, synced_at TEXT);
 
 CREATE TABLE IF NOT EXISTS buyers (
@@ -45,7 +48,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id),
   amount REAL NOT NULL, method TEXT,
-  reference TEXT, proof_uri TEXT, paid_at TEXT NOT NULL,
+  reference TEXT, proof_uri TEXT, note TEXT, paid_at TEXT NOT NULL,
   created_at TEXT, updated_at TEXT, deleted_at TEXT, synced_at TEXT);
 
 CREATE TABLE IF NOT EXISTS order_attachments (
@@ -69,6 +72,8 @@ export async function migrateDb(db: SQLiteDatabase): Promise<void> {
   await addColumnIfMissing(db, 'orders', 'weight_fee_per_kg', 'REAL NOT NULL DEFAULT 0');
   await addColumnIfMissing(db, 'orders', 'tracking_code', 'TEXT');
   await addColumnIfMissing(db, 'orders', 'delivery_proof_uri', 'TEXT');
+  await addColumnIfMissing(db, 'payments', 'note', 'TEXT');
+  await addColumnIfMissing(db, 'trips', 'status_override', 'TEXT');
   if (current < 2) {
     await db.execAsync(`
       UPDATE orders
@@ -84,11 +89,39 @@ export async function migrateDb(db: SQLiteDatabase): Promise<void> {
           ), 0)
     `);
   }
+  if (current < 5) {
+    await inlineStoredFiles(db);
+  }
   if (current < DATABASE_VERSION) {
     await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
   }
   if (current === 0) {
     await seedIfEmpty(db);
+  }
+}
+
+// Moves images/attachments that were saved as on-device file paths into the database as data URIs.
+async function inlineStoredFiles(db: SQLiteDatabase): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const columns = [
+    { table: 'order_items', column: 'photo_uri', mime: null },
+    { table: 'payments', column: 'proof_uri', mime: null },
+    { table: 'orders', column: 'delivery_proof_uri', mime: null },
+    { table: 'order_attachments', column: 'uri', mime: 'mime_type' },
+  ] as const;
+  for (const { table, column, mime } of columns) {
+    const rows = await db.getAllAsync<{ id: string; uri: string; mime: string | null }>(
+      `SELECT id, ${column} AS uri, ${mime ?? 'NULL'} AS mime FROM ${table} WHERE ${column} LIKE 'file:%'`
+    );
+    for (const row of rows) {
+      try {
+        if (!new File(row.uri).exists) continue;
+        const dataUri = await toDataUri(row.uri, row.mime);
+        await db.runAsync(`UPDATE ${table} SET ${column} = ? WHERE id = ?`, [dataUri, row.id]);
+      } catch {
+        // Leave unreadable files as they are rather than blocking app start.
+      }
+    }
   }
 }
 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +11,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
+import { Alert } from '@/lib/alert';
 import { Formik } from 'formik';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Input, PrimaryButton } from './ui';

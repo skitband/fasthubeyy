@@ -28,7 +28,7 @@ export default function Luggage() {
   const free = Math.max(0, allowance - used);
   const pct = allowance ? (used / allowance) * 100 : 0;
   const heaviest = [...orders]
-    .filter((o) => o.status !== 'delivered')
+    .filter((o) => o.kg > 0)
     .sort((a, b) => b.kg - a.kg)
     .slice(0, 4);
   const maxKg = heaviest[0]?.kg || 1;
@@ -46,15 +46,15 @@ export default function Luggage() {
           <ProgressBar pct={pct} height={10} />
         </View>
         <Text style={styles.note}>
-          {`${free.toFixed(1)} kg still free \u00B7 excess baggage costs \u20B1${trip.excess_per_kg ?? 1250} per extra kg`}
+          {`${free.toFixed(1)} kg still free`}
         </Text>
       </View>
 
-      <Text style={styles.sectionLabel}>Heaviest orders</Text>
+      <Text style={styles.sectionLabel}>Weight of orders</Text>
       <View style={styles.listCard}>
         {heaviest.length === 0 ? (
           <View style={styles.emptyRow}>
-            <Text style={styles.emptyText}>No undelivered orders on this trip.</Text>
+            <Text style={styles.emptyText}>No order weights entered for this trip yet.</Text>
           </View>
         ) : (
           heaviest.map((o, i) => (

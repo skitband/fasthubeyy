@@ -92,7 +92,8 @@ export const tripValidationSchema: yup.ObjectSchema<TripFormValues> = yup.object
 
 export const orderValidationSchema: yup.ObjectSchema<OrderFormValues> = yup.object({
   buyerId: yup.string().required('Select a customer'),
-  weightKg: yup.string().trim().defined().test(
+  // Formik turns '' into undefined before validating; default it back so a blank weight is allowed.
+  weightKg: yup.string().trim().default('').test(
     'valid-order-weight',
     'Enter a valid weight of 0 or greater',
     (value) => value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0)

@@ -1,6 +1,8 @@
+import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { downloadOnWeb } from '@/lib/webDownload';
 import { DATABASE_VERSION, migrateDb } from './schema';
 
 const REQUIRED_TABLES = ['trips', 'buyers', 'orders', 'order_items', 'payments'];
@@ -19,9 +21,16 @@ function backupTimestamp(date = new Date()): string {
   return `${yyyy}${mm}${dd}-${hh}${min}${ss}`;
 }
 
-export async function exportDatabaseBackup(db: SQLiteDatabase): Promise<File> {
+// On web the browser downloads the backup directly and this returns null.
+export async function exportDatabaseBackup(db: SQLiteDatabase): Promise<File | null> {
   const bytes = await db.serializeAsync();
-  const file = new File(Paths.document, `pasabuy-backup-${backupTimestamp()}.db`);
+  const filename = `pasabuy-backup-${backupTimestamp()}.db`;
+  if (Platform.OS === 'web') {
+    // Copy out of a possible SharedArrayBuffer; Blob rejects shared memory.
+    downloadOnWeb(new Uint8Array(bytes), filename, 'application/x-sqlite3');
+    return null;
+  }
+  const file = new File(Paths.document, filename);
   file.create({ overwrite: true });
   file.write(bytes);
   return file;
@@ -48,13 +57,21 @@ async function validateBackup(sourceDb: SQLiteDatabase): Promise<void> {
   }
 }
 
-export async function importDatabaseBackup(db: SQLiteDatabase, backupUri: string): Promise<void> {
+async function readBackupBytes(backupUri: string): Promise<Uint8Array> {
+  if (Platform.OS === 'web') {
+    const res = await fetch(backupUri);
+    if (!res.ok) throw new Error('Selected backup file is no longer accessible.');
+    return new Uint8Array(await res.arrayBuffer());
+  }
   const backupFile = new File(backupUri);
   if (!backupFile.exists) {
     throw new Error('Selected backup file is no longer accessible.');
   }
+  return backupFile.bytes();
+}
 
-  const bytes = await backupFile.bytes();
+export async function importDatabaseBackup(db: SQLiteDatabase, backupUri: string): Promise<void> {
+  const bytes = await readBackupBytes(backupUri);
   if (bytes.length < 100 || String.fromCharCode(...bytes.subarray(0, 15)) !== 'SQLite format 3') {
     throw new Error('Selected file is not a SQLite database backup.');
   }

@@ -19,6 +19,8 @@ export interface Trip {
   fee_per_kg: number;
   excess_per_kg: number | null;
   status: TripStatus;
+  /** Manual open/closed choice; null means status follows the order cutoff date. */
+  status_override: TripStatus | null;
   created_at: string | null;
   updated_at: string | null;
   deleted_at: string | null;
@@ -96,6 +98,7 @@ export interface Payment {
   method: PayMethod | null;
   reference: string | null;
   proof_uri: string | null;
+  note: string | null;
   paid_at: string;
   created_at: string | null;
   updated_at: string | null;
@@ -125,6 +128,7 @@ export interface OrderEvent {
 export interface OrderView extends Order {
   buyer_name: string;
   buyer_phone: string | null;
+  buyer_email: string | null;
   buyer_channel: Channel | null;
   items: OrderItem[];
   total: number;

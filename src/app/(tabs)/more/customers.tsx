@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Formik } from 'formik';
 import { useSQLiteContext } from 'expo-sqlite';
 import { BackHeader } from '@/components/layout';
-import { Input, PrimaryButton } from '@/components/ui';
+import { Avatar, DangerIconButton, Input, PrimaryButton } from '@/components/ui';
 import { useDbData, usePullToRefresh, useRefresh } from '@/db/hooks';
 import { createBuyer, deleteBuyer, listBuyers, updateBuyer } from '@/db/queries';
 import { customerValidationSchema, type CustomerFormValues } from '@/lib/formSchemas';
 import type { Buyer } from '@/db/types';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
+import { initials } from '@/lib/money';
 
 export default function Customers() {
   const db = useSQLiteContext();
@@ -78,39 +80,30 @@ export default function Customers() {
 
         <View style={styles.list}>
           {buyers.map((buyer, index) => (
-            <Pressable
-              key={buyer.id}
-              accessibilityRole="button"
-              onPress={() => startEdit(buyer)}
-              style={({ pressed }) => [styles.customerRow, index === buyers.length - 1 && styles.lastRow, pressed && styles.rowPressed]}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{buyer.name.trim().charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={styles.buyerCopy}>
-                <Text style={styles.buyerName}>{buyer.name}</Text>
-                {buyer.phone ? <Text style={styles.buyerMeta}>{buyer.phone}</Text> : null}
-                {buyer.email ? <Text style={styles.buyerMeta} numberOfLines={1}>{buyer.email}</Text> : null}
-              </View>
+            <View key={buyer.id} style={[styles.customerRow, index === buyers.length - 1 && styles.lastRow]}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => startEdit(buyer)}
+                style={({ pressed }) => [styles.rowMain, pressed && styles.rowPressed]}
+              >
+                <Avatar label={initials(buyer.name)} size={38} />
+                <View style={styles.buyerCopy}>
+                  <Text style={styles.buyerName}>{buyer.name}</Text>
+                  {buyer.phone ? <Text style={styles.buyerMeta}>{buyer.phone}</Text> : null}
+                  {buyer.email ? <Text style={styles.buyerMeta} numberOfLines={1}>{buyer.email}</Text> : null}
+                </View>
+              </Pressable>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Edit ${buyer.name}`}
                 hitSlop={6}
-                style={[styles.iconButton, styles.editAction]}
+                style={styles.iconButton}
                 onPress={() => startEdit(buyer)}
               >
                 <MaterialIcons name="edit" size={18} color={colors.ink} />
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Delete ${buyer.name}`}
-                hitSlop={6}
-                style={[styles.iconButton, styles.deleteAction]}
-                onPress={() => confirmDelete(buyer)}
-              >
-                <MaterialIcons name="delete-outline" size={18} color={colors.errorFg} />
-              </Pressable>
-            </Pressable>
+              <DangerIconButton accessibilityLabel={`Delete ${buyer.name}`} onPress={() => confirmDelete(buyer)} />
+            </View>
           ))}
           {buyers.length === 0 ? (
             <View style={styles.empty}>
@@ -181,20 +174,17 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.screen, paddingTop: 6, paddingBottom: 32 },
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   subtitle: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.textMuted },
-  addButton: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.ink, borderRadius: radius.button, paddingHorizontal: 13, paddingVertical: 10 },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.ink, borderRadius: radius.button, paddingHorizontal: 14, paddingVertical: 8 },
   addButtonText: { fontFamily: fonts.semibold, fontSize: 12.5, color: colors.white },
   list: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderCard, borderRadius: radius.card, overflow: 'hidden' },
   customerRow: { flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 74, paddingHorizontal: 13, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.hairline },
   lastRow: { borderBottomWidth: 0 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: fonts.semibold, fontSize: 14, color: colors.ink },
+  rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: radius.input },
   buyerCopy: { flex: 1, minWidth: 0 },
   buyerName: { fontFamily: fonts.semibold, fontSize: 13.5, color: colors.ink, marginBottom: 3 },
   buyerMeta: { fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted, lineHeight: 15 },
   rowPressed: { backgroundColor: colors.background },
   iconButton: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  editAction: { backgroundColor: colors.muted },
-  deleteAction: { backgroundColor: colors.errorBg },
   empty: { minHeight: 130, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyText: { fontFamily: fonts.medium, fontSize: 13, color: colors.textMuted },
   modal: { flex: 1, justifyContent: 'flex-end' },
