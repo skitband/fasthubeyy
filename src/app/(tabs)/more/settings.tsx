@@ -8,14 +8,20 @@ import * as Sharing from 'expo-sharing';
 import { useSQLiteContext } from 'expo-sqlite';
 import { BackHeader } from '@/components/layout';
 import { DangerButton } from '@/components/ui';
+import { useToast } from '@/components/Toast';
 import { useRefresh } from '@/db/hooks';
 import { exportDatabaseBackup, importDatabaseBackup } from '@/db/backup';
 import { resetDatabase } from '@/db/queries';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export default function Settings() {
   const db = useSQLiteContext();
   const { refresh } = useRefresh();
+  const toast = useToast();
   const [isBusy, setIsBusy] = useState(false);
   const isPicking = useRef(false);
 
@@ -24,18 +30,22 @@ export default function Settings() {
     setIsBusy(true);
     try {
       const file = await exportDatabaseBackup(db);
-      if (!file) return;
+      if (!file) {
+        toast.show('Backup downloaded.');
+        return;
+      }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(file.uri, {
           mimeType: 'application/x-sqlite3',
           dialogTitle: 'Export database backup',
           UTI: 'public.database',
         });
+        toast.show('Backup exported.');
       } else {
-        Alert.alert('Backup saved', `Backup created at ${file.uri}`);
+        toast.show('Backup saved on this device.');
       }
     } catch (error) {
-      Alert.alert('Backup failed', String(error));
+      toast.show(`Export failed: ${errorMessage(error)}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -62,7 +72,7 @@ export default function Settings() {
         ]
       );
     } catch (error) {
-      Alert.alert('Unable to select backup', String(error));
+      toast.show(`Could not open backup file: ${errorMessage(error)}`, 'error');
     } finally {
       isPicking.current = false;
     }
@@ -74,9 +84,9 @@ export default function Settings() {
     try {
       await importDatabaseBackup(db, uri);
       refresh();
-      Alert.alert('Restore complete', 'Your local database has been restored from backup.');
+      toast.show('Backup restored.');
     } catch (error) {
-      Alert.alert('Restore failed', String(error));
+      toast.show(`Import failed: ${errorMessage(error)}`, 'error');
     } finally {
       setIsBusy(false);
     }
@@ -110,9 +120,9 @@ export default function Settings() {
     try {
       resetDatabase(db);
       refresh();
-      Alert.alert('Database reset', 'All local data has been removed.');
+      toast.show('All data has been reset.');
     } catch (error) {
-      Alert.alert('Reset failed', String(error));
+      toast.show(`Reset failed: ${errorMessage(error)}`, 'error');
     } finally {
       setIsBusy(false);
     }

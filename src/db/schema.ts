@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import { File } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { toDataUri } from '@/lib/dataUri';
-import { itemFee, itemKg, itemSubtotal, nowISO } from '@/lib/money';
 
 export const DATABASE_VERSION = 5;
 
@@ -95,9 +94,6 @@ export async function migrateDb(db: SQLiteDatabase): Promise<void> {
   if (current < DATABASE_VERSION) {
     await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
   }
-  if (current === 0) {
-    await seedIfEmpty(db);
-  }
 }
 
 // Moves images/attachments that were saved as on-device file paths into the database as data URIs.
@@ -135,154 +131,5 @@ async function addColumnIfMissing(
   const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
   if (!cols.some((c) => c.name === column)) {
     await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  }
-}
-
-// ---- Seed data (from the prototype's sample orders) ----
-
-type SeedItem = { name: string; qty: number; unit_cost: number; kg: number; foreign_cost: string };
-type SeedOrder = {
-  id: string;
-  ref: string;
-  buyer: string;
-  status: string;
-  code: string;
-  items: SeedItem[];
-  // fraction of computed total that is paid: 1 = paid in full, 0 = unpaid.
-  paidFraction: number;
-  payment?: { method: string; reference: string; note: string; paid_at: string };
-};
-
-async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
-  const existing = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM trips');
-  if ((existing?.n ?? 0) > 0) return;
-
-  const now = nowISO();
-  const TRIP_ID = 'trip-dxb-mnl';
-  const FEE_PCT = 15;
-  const FEE_PER_KG = 150;
-
-  await db.runAsync(
-    `INSERT INTO trips (id, origin, destination, depart_date, return_date, cutoff_date,
-      checked_kg, cabin_kg, fee_pct, fee_per_kg, excess_per_kg, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
-    [TRIP_ID, 'Dubai, DXB', 'Manila, MNL', '2026-10-03', '2026-10-12', '2026-09-28',
-      30, 7, FEE_PCT, FEE_PER_KG, 1250, now, now]
-  );
-
-  const buyers: { id: string; name: string; phone: string; channel: string }[] = [
-    { id: 'b-mariel', name: 'Mariel Santos', phone: '+63 917 224 8810', channel: 'viber' },
-    { id: 'b-kenneth', name: 'Kenneth Uy', phone: '+63 928 771 3345', channel: 'messenger' },
-    { id: 'b-grace', name: 'Grace Panganiban', phone: '+63 906 118 0042', channel: 'viber' },
-    { id: 'b-dennis', name: 'Dennis Abalos', phone: '+63 915 662 9931', channel: 'viber' },
-    { id: 'b-aira', name: 'Aira Delos Reyes', phone: '+63 999 340 2277', channel: 'viber' },
-    { id: 'b-joy', name: 'Joy Villanueva', phone: null as unknown as string, channel: 'viber' },
-  ];
-  for (const b of buyers) {
-    await db.runAsync(
-      `INSERT INTO buyers (id, name, phone, channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [b.id, b.name, b.phone ?? null, b.channel, now, now]
-    );
-  }
-
-  const orders: SeedOrder[] = [
-    {
-      id: 'o1', ref: 'ORD-2481', buyer: 'b-mariel', status: 'bought', code: '4829',
-      paidFraction: 0.42,
-      items: [
-        { name: 'iPhone 16 Pro case', qty: 2, unit_cost: 1200, kg: 0.15, foreign_cost: 'AED 180 \u00B7 0.3 kg' },
-        { name: 'Bath & Body Works set', qty: 1, unit_cost: 5600, kg: 1.1, foreign_cost: 'AED 420 \u00B7 1.1 kg' },
-        { name: 'Nintendo Switch 2 dock', qty: 1, unit_cost: 14000, kg: 1.0, foreign_cost: 'AED 1,050 \u00B7 1.0 kg' },
-      ],
-      payment: { method: 'gcash', reference: '8842 1190', note: 'Downpayment. Balance due on handover.', paid_at: '2026-09-14T09:00:00.000Z' },
-    },
-    {
-      id: 'o2', ref: 'ORD-2482', buyer: 'b-kenneth', status: 'confirmed', code: '7155',
-      paidFraction: 0,
-      items: [
-        { name: 'Lego Icons Orchid', qty: 2, unit_cost: 3000, kg: 1.1, foreign_cost: 'AED 190 ea \u00B7 1.1 kg ea' },
-      ],
-    },
-    {
-      id: 'o3', ref: 'ORD-2483', buyer: 'b-grace', status: 'packed', code: '2306',
-      paidFraction: 1,
-      items: [
-        { name: 'Charlotte Tilbury set', qty: 1, unit_cost: 8400, kg: 0.5, foreign_cost: 'AED 560 \u00B7 0.5 kg' },
-      ],
-      payment: { method: 'bank', reference: 'BPI 4471', note: 'Paid in full. Nothing left to collect.', paid_at: '2026-09-09T09:00:00.000Z' },
-    },
-    {
-      id: 'o4', ref: 'ORD-2484', buyer: 'b-dennis', status: 'requested', code: '9041',
-      paidFraction: 0,
-      items: [
-        { name: 'Ferrero Rocher (6 boxes)', qty: 6, unit_cost: 850, kg: 0.15, foreign_cost: 'AED 25 ea \u00B7 0.15 kg ea' },
-      ],
-    },
-    {
-      id: 'o5', ref: 'ORD-2485', buyer: 'b-aira', status: 'delivered', code: '6672',
-      paidFraction: 1,
-      items: [
-        { name: 'Coach Tabby 26', qty: 1, unit_cost: 14000, kg: 1.4, foreign_cost: 'AED 1,190 \u00B7 1.4 kg' },
-        { name: 'Skechers slip-ins', qty: 1, unit_cost: 2400, kg: 1.7, foreign_cost: 'AED 210 \u00B7 1.7 kg' },
-      ],
-      payment: { method: 'gcash', reference: '7710 4408', note: 'Handed over Sep 2 at NAIA 3.', paid_at: '2026-09-02T09:00:00.000Z' },
-    },
-  ];
-
-  for (const o of orders) {
-    const weightKg = o.items.reduce((total, item) => total + item.kg * item.qty, 0);
-    await db.runAsync(
-      `INSERT INTO orders (id, ref, trip_id, buyer_id, status, weight_kg, weight_fee_per_kg, handover_code, delivered_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [o.id, o.ref, TRIP_ID, o.buyer, o.status, weightKg, FEE_PER_KG, o.code,
-        o.status === 'delivered' ? o.payment?.paid_at ?? now : null, now, now]
-    );
-
-    let total = 0;
-    for (let i = 0; i < o.items.length; i++) {
-      const it = o.items[i];
-      total += itemSubtotal(it.unit_cost, it.qty) + itemFee(it.unit_cost, it.qty, it.kg, FEE_PCT, FEE_PER_KG);
-      await db.runAsync(
-        `INSERT INTO order_items (id, order_id, name, qty, unit_cost, foreign_cost, kg, fee_pct, fee_per_kg, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [`${o.id}-i${i}`, o.id, it.name, it.qty, it.unit_cost, it.foreign_cost, it.kg, FEE_PCT, FEE_PER_KG, now, now]
-      );
-    }
-
-    if (o.paidFraction > 0 && o.payment) {
-      const amount = Math.round(total * o.paidFraction);
-      await db.runAsync(
-        `INSERT INTO payments (id, order_id, amount, method, reference, paid_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [`${o.id}-p0`, o.id, amount, o.payment.method, o.payment.reference, o.payment.paid_at, now, now]
-      );
-    }
-
-    // Timeline events up to the reached status.
-    const chain = ['confirmed', 'bought', 'packed', 'delivered'];
-    const reached = ['requested', 'confirmed', 'bought', 'packed', 'delivered'].indexOf(o.status);
-    for (const s of chain) {
-      if (chain.indexOf(s) < reached) {
-        await db.runAsync(
-          `INSERT INTO order_events (id, order_id, status, note, at) VALUES (?, ?, ?, ?, ?)`,
-          [`${o.id}-e-${s}`, o.id, s, null, now]
-        );
-      }
-    }
-  }
-
-  // Void luggage kg is derived; nothing to store here.
-
-  const requests: { id: string; buyer: string; channel: string; item: string; note: string; budget: number; est_kg: number }[] = [
-    { id: 'r1', buyer: 'b-joy', channel: 'viber', item: 'Dyson Airwrap Origin', note: 'Any color, gift box please', budget: 32000, est_kg: 1.6 },
-    { id: 'r2', buyer: 'b-kenneth', channel: 'messenger', item: 'Lego Icons Orchid \u00D72', note: 'Only if under \u20B14k each', budget: 7800, est_kg: 2.2 },
-    { id: 'r3', buyer: 'b-grace', channel: 'viber', item: 'Charlotte Tilbury set', note: 'Pillow Talk shade', budget: 9400, est_kg: 0.5 },
-  ];
-  for (const r of requests) {
-    await db.runAsync(
-      `INSERT INTO requests (id, trip_id, buyer_id, item_name, note, budget, est_kg, channel, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-      [r.id, TRIP_ID, r.buyer, r.item, r.note, r.budget, r.est_kg, r.channel, now, now]
-    );
   }
 }

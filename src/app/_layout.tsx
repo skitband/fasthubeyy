@@ -19,6 +19,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { migrateDb } from '@/db/schema';
 import { RefreshProvider } from '@/db/hooks';
+import { ToastProvider } from '@/components/Toast';
 import { colors } from '@/theme/tokens';
 
 Notifications.setNotificationHandler({
@@ -54,6 +55,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <SQLiteProvider databaseName="pasabuy.db" onInit={migrateDb}>
           <RefreshProvider>
+            <ToastProvider>
             <StatusBar style="dark" />
             <Stack
               screenOptions={{
@@ -68,6 +70,7 @@ export default function RootLayout() {
               <Stack.Screen name="order/[id]/index" />
               <Stack.Screen name="order/[id]/handover" />
             </Stack>
+            </ToastProvider>
           </RefreshProvider>
         </SQLiteProvider>
       </SafeAreaProvider>
