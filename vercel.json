@@ -1,4 +1,5 @@
 {
+  "installCommand": "npm ci",
   "buildCommand": "npx expo export -p web",
   "outputDirectory": "dist",
   "devCommand": "npx expo start --web",
