@@ -11,10 +11,11 @@ import {
   JetBrainsMono_600SemiBold,
 } from '@expo-google-fonts/jetbrains-mono';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider } from 'expo-sqlite';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View } from 'react-native';
+import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { migrateDb } from '@/db/schema';
@@ -31,8 +32,11 @@ Notifications.setNotificationHandler({
   }),
 });
 
+void SplashScreen.preventAutoHideAsync();
+SplashScreen.setOptions({ duration: 300, fade: true });
+
 export default function RootLayout() {
-  const [loaded] = useFonts({
+  const [loaded, error] = useFonts({
     SchibstedGrotesk_400Regular,
     SchibstedGrotesk_500Medium,
     SchibstedGrotesk_600SemiBold,
@@ -42,13 +46,11 @@ export default function RootLayout() {
     JetBrainsMono_600SemiBold,
   });
 
-  if (!loaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.ink} />
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (loaded || error) SplashScreen.hide();
+  }, [loaded, error]);
+
+  if (!loaded && !error) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
