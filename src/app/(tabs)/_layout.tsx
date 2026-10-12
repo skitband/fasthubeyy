@@ -182,7 +182,7 @@ export default function TabsLayout() {
                 <MaterialIcons name="close" size={22} color={colors.textMuted} />
               </Pressable>
             </View>
-            <Image source={gcashQr} style={[styles.qr, { height: Math.min(windowHeight * 0.45, 340) }]} resizeMode="contain" accessibilityLabel="GCash InstaPay QR code" />
+            <Image source={gcashQr} style={[styles.qr, { maxHeight: Math.min(windowHeight * 0.45, 340) }]} resizeMode="contain" accessibilityLabel="GCash InstaPay QR code" />
             <View style={styles.numberRow}>
               <Text style={styles.numberLabel}>GCash</Text>
               <Text style={styles.numberText} selectable>{GCASH_NUMBER}</Text>
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   optionDescription: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.textMuted, marginTop: 2 },
   qrOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   qrDialog: { width: '100%', maxWidth: 340, backgroundColor: colors.surface, borderRadius: radius.hero, padding: 18 },
-  qr: { width: '100%', borderRadius: radius.card },
+  qr: { width: '100%', aspectRatio: 1, alignSelf: 'center', borderRadius: radius.card },
   qrHint: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.textMuted, textAlign: 'center', marginTop: 12 },
   qrThanks: { fontFamily: fonts.semibold, fontSize: 13, color: colors.ink, textAlign: 'center', marginTop: 8 },
   numberRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
