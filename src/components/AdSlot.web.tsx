@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 
 const AD_CLIENT = 'ca-pub-6112467165543220';
@@ -26,24 +26,34 @@ function loadAdSenseScript() {
 
 /** Responsive AdSense display unit. */
 export function AdSlot({ slot }: { slot: string }) {
-  const requested = useRef(false);
-  const [width, setWidth] = useState(0);
+  const insRef = useRef<HTMLModElement>(null);
 
-  // AdSense rejects slots measured at 0px (e.g. a screen mounted while hidden), so wait for layout.
+  // AdSense rejects slots measured at 0px (e.g. a screen mounted behind a modal), so wait until it's visible.
   useEffect(() => {
-    if (width === 0 || requested.current) return;
-    requested.current = true;
-    loadAdSenseScript();
-    try {
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch {
-      // Ad blockers or an already-filled slot; the page works without the ad.
-    }
-  }, [width]);
+    const ins = insRef.current;
+    if (!ins) return;
+    let requested = false;
+    const request = () => {
+      if (requested || ins.offsetWidth === 0) return;
+      requested = true;
+      observer.disconnect();
+      loadAdSenseScript();
+      try {
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      } catch {
+        // Ad blockers or an already-filled slot; the page works without the ad.
+      }
+    };
+    const observer = new ResizeObserver(request);
+    observer.observe(ins);
+    request();
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <View style={{ marginTop: 18 }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
+    <View style={{ marginTop: 18 }}>
       <ins
+        ref={insRef}
         className="adsbygoogle"
         style={{ display: 'block' }}
         data-ad-client={AD_CLIENT}
