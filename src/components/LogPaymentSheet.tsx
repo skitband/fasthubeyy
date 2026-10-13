@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import {
   KeyboardAvoidingView,
   Modal,

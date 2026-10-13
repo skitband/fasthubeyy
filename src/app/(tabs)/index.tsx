@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { Screen, SectionHeader } from '@/components/layout';
+import { AdSlot } from '@/components/AdSlot';
 import { Card, ProgressBar } from '@/components/ui';
 import { OrderCard } from '@/components/OrderCard';
 import { TripPickerSheet } from '@/components/TripPickerSheet';
@@ -120,6 +121,8 @@ export default function TripHub() {
           <Text style={[styles.tileValue, { color: colors.errorFg }]}>{peso(owed)}</Text>
         </Pressable>
       </View>
+
+      <AdSlot slot="4551011649" />
 
       <SectionHeader
         title="Needs your attention"

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
+import { useSQLiteContext, type SQLiteDatabase } from './sqlite';
 
 // Manual refresh signal: mutations call refresh(), screens re-run selectors.
 const RefreshContext = createContext<{ version: number; refresh: () => void }>({

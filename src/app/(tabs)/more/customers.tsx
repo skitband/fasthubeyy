@@ -4,7 +4,7 @@ import { Alert } from '@/lib/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Formik } from 'formik';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { BackHeader } from '@/components/layout';
 import { Avatar, DangerIconButton, Input, PrimaryButton } from '@/components/ui';
 import { useDbData, usePullToRefresh, useRefresh } from '@/db/hooks';

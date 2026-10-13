@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Alert } from '@/lib/alert';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { BackHeader, Screen } from '@/components/layout';
 import { Input } from '@/components/ui';
 import { useDbData, useRefresh } from '@/db/hooks';

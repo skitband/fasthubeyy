@@ -9,7 +9,7 @@ import { ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Formik, type FormikProps } from 'formik';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { Badge, DangerButton, Input, PrimaryButton } from '@/components/ui';
 import { LogPaymentSheet } from '@/components/LogPaymentSheet';
 import { PaymentHistorySheet } from '@/components/PaymentHistorySheet';

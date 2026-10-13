@@ -13,7 +13,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Alert } from '@/lib/alert';
 import { Formik } from 'formik';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { Input, PrimaryButton } from './ui';
 import { createBuyer, deleteBuyer, updateBuyer } from '@/db/queries';
 import { customerValidationSchema, type CustomerFormValues } from '@/lib/formSchemas';

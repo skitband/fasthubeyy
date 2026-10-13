@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { DangerButton, DangerIconButton, PrimaryButton } from './ui';
 import { useRefresh } from '@/db/hooks';
 import { deletePayment, listPayments, markOrderUnpaid } from '@/db/queries';

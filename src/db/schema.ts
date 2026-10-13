@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { File } from 'expo-file-system';
-import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SQLiteDatabase } from './sqlite';
 import { toDataUri } from '@/lib/dataUri';
 
 export const DATABASE_VERSION = 5;

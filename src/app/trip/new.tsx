@@ -4,7 +4,7 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import { Modal, Platform, Pressable, StyleSheet, Text, View, type TextInputProps } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Formik } from 'formik';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { BackHeader, Label, Screen } from '@/components/layout';
 import { Input, PrimaryButton } from '@/components/ui';
 import { useDbData, useRefresh } from '@/db/hooks';

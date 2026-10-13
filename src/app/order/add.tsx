@@ -6,7 +6,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Alert } from '@/lib/alert';
 import { MaterialIcons } from '@expo/vector-icons';
 import { FieldArray, Formik, getIn, type FormikProps } from 'formik';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext } from '@/db/sqlite';
 import { BackHeader, Screen } from '@/components/layout';
 import { DangerIconButton, Input, PrimaryButton } from '@/components/ui';
 import { CustomerSelect } from '@/components/CustomerSelect';

@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
-import * as SQLite from 'expo-sqlite';
-import type { SQLiteDatabase } from 'expo-sqlite';
+import { backupDatabaseAsync, deserializeDatabaseAsync, type SQLiteDatabase } from './sqlite';
 import { downloadOnWeb } from '@/lib/webDownload';
 import { DATABASE_VERSION, migrateDb } from './schema';
 
@@ -83,9 +82,9 @@ export async function importDatabaseBackup(db: SQLiteDatabase, backupUri: string
 
   let sourceDb: SQLiteDatabase | null = null;
   try {
-    sourceDb = await SQLite.deserializeDatabaseAsync(bytes);
+    sourceDb = await deserializeDatabaseAsync(bytes);
     await validateBackup(sourceDb);
-    await SQLite.backupDatabaseAsync({
+    await backupDatabaseAsync({
       sourceDatabase: sourceDb,
       sourceDatabaseName: 'main',
       destDatabase: db,
