@@ -122,7 +122,7 @@ export default function TripHub() {
         </Pressable>
       </View>
 
-      <AdSlot slot="4551011649" />
+      <AdSlot />
 
       <SectionHeader
         title="Needs your attention"

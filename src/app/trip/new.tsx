@@ -13,6 +13,7 @@ import type { TripStatus } from '@/db/types';
 import { tripValidationSchema, type TripFormValues } from '@/lib/formSchemas';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { shortDate } from '@/lib/money';
+import { AdSlot } from '@/components/AdSlot';
 
 type StatusChoice = 'auto' | TripStatus;
 const STATUS_CHOICES: { key: StatusChoice; label: string }[] = [
@@ -160,6 +161,7 @@ export default function NewTrip() {
 
             <View style={{ height: 20 }} />
             <PrimaryButton title={editing ? 'Save changes' : 'Create trip'} onPress={() => handleSubmit()} />
+            <AdSlot style={{ marginTop: 32 }} />
           </>
         )}
       </Formik>

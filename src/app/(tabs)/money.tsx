@@ -9,6 +9,7 @@ import { useDbData, usePullToRefresh } from '@/db/hooks';
 import { getActiveTrip, listOrders } from '@/db/queries';
 import { colors, fonts, PAY, radius, spacing } from '@/theme/tokens';
 import { initials, peso } from '@/lib/money';
+import { AdSlot } from '@/components/AdSlot';
 
 export default function Money() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -52,6 +53,8 @@ export default function Money() {
             <LegendRow color="#E5E2DD" label="Not paid at all" value={peso(notPaid)} />
           </View>
         </View>
+
+        <AdSlot style={{ marginTop: 0, marginBottom: 18 }} />
 
         <View style={{ gap: 9 }}>
           {orders.map((o) => {

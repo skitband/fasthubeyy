@@ -20,6 +20,7 @@ import { colors, fonts, PAY, radius, spacing, STATUS } from '@/theme/tokens';
 import { peso } from '@/lib/money';
 import { toDataUri, shareStoredFile } from '@/lib/dataUri';
 import { editOrderItemValidationSchema, type EditOrderItemFormValues } from '@/lib/formSchemas';
+import { AdSlot } from '@/components/AdSlot';
 
 const CHAIN = ['confirmed', 'bought', 'packed', 'delivered'] as const;
 const STEP_LABEL: Record<string, string> = {
@@ -604,6 +605,7 @@ export default function OrderDetail() {
                 : "Fully paid orders can't be deleted. Mark as unpaid first."}
             </Text>
           ) : null}
+          <AdSlot style={{ marginTop: 32 }} />
         </View>
       </ScrollView>
 

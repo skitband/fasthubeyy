@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { View } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 
 const AD_CLIENT = 'ca-pub-6112467165543220';
+const DEFAULT_SLOT = '4551011649';
 const SCRIPT_ID = 'adsbygoogle-js';
 
 declare global {
@@ -25,7 +26,7 @@ function loadAdSenseScript() {
 }
 
 /** Responsive AdSense display unit. */
-export function AdSlot({ slot }: { slot: string }) {
+export function AdSlot({ slot = DEFAULT_SLOT, style }: { slot?: string; style?: StyleProp<ViewStyle> }) {
   const insRef = useRef<HTMLModElement>(null);
 
   // AdSense rejects slots measured at 0px (e.g. a screen mounted behind a modal), so wait until it's visible.
@@ -51,7 +52,7 @@ export function AdSlot({ slot }: { slot: string }) {
   }, []);
 
   return (
-    <View style={{ marginTop: 18 }}>
+    <View style={[{ marginTop: 18 }, style]}>
       <ins
         ref={insRef}
         className="adsbygoogle"

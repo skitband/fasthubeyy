@@ -12,6 +12,7 @@ import { getOrder, setOrderStatus, updateOrderShipment } from '@/db/queries';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { peso, spacedCode } from '@/lib/money';
 import { toDataUri } from '@/lib/dataUri';
+import { AdSlot } from '@/components/AdSlot';
 
 const CHECKLIST = [
   { id: 'c1', label: 'All items checked against the order' },
@@ -129,6 +130,7 @@ export default function Handover() {
                 : 'Mark delivered'}
         </Text>
       </Pressable>
+      <AdSlot style={{ marginTop: 32 }} />
     </Screen>
   );
 }

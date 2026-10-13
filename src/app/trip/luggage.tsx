@@ -5,6 +5,7 @@ import { useDbData } from '@/db/hooks';
 import { getActiveTrip, listOrders, luggageUsed } from '@/db/queries';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { kgLabel } from '@/lib/money';
+import { AdSlot } from '@/components/AdSlot';
 
 export default function Luggage() {
   const data = useDbData((db) => {
@@ -68,6 +69,7 @@ export default function Luggage() {
           ))
         )}
       </View>
+      <AdSlot style={{ marginTop: 24 }} />
     </Screen>
   );
 }

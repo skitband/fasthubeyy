@@ -10,6 +10,7 @@ import { Input } from '@/components/ui';
 import { useDbData, usePullToRefresh } from '@/db/hooks';
 import { getActiveTrip, listOrders, luggageUsed } from '@/db/queries';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
+import { AdSlot } from '@/components/AdSlot';
 
 const FILTERS = ['All', 'Unpaid', 'Paid', 'Bought', 'Packed', 'Delivered'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -138,6 +139,7 @@ export default function OrdersBoard() {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshOrders} />}
         ListEmptyComponent={<Text style={styles.empty}>No orders match this filter.</Text>}
+        ListHeaderComponent={<AdSlot style={{ marginTop: 0, marginBottom: 14 }} />}
         ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.ink} style={styles.loadingMore} /> : null}
         keyboardShouldPersistTaps="handled"
       />

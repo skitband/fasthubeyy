@@ -13,6 +13,7 @@ import { useRefresh } from '@/db/hooks';
 import { exportDatabaseBackup, importDatabaseBackup } from '@/db/backup';
 import { resetDatabase } from '@/db/queries';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
+import { AdSlot } from '@/components/AdSlot';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -146,6 +147,8 @@ export default function Settings() {
           <MaterialIcons name="info-outline" size={18} color={colors.infoFg} />
           <Text style={styles.noticeText}>Backups contain customer, trip, order, and payment records. Keep exported files somewhere private.</Text>
         </View>
+
+        <AdSlot style={{ marginTop: 22 }} />
 
         <Text style={[styles.sectionLabel, styles.resetHeading]}>Danger zone</Text>
         <View style={styles.resetPanel}>

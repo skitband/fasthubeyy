@@ -26,6 +26,7 @@ import { orderValidationSchema, type OrderFormValues } from '@/lib/formSchemas';
 import { colors, fonts, radius } from '@/theme/tokens';
 import { itemSubtotal, peso } from '@/lib/money';
 import { toDataUri } from '@/lib/dataUri';
+import { AdSlot } from '@/components/AdSlot';
 
 export default function AddItem() {
   const router = useRouter();
@@ -300,6 +301,7 @@ export default function AddItem() {
                 title={`Save to ${shortRoute}`}
                 onPress={() => handleSubmit()}
               />
+              <AdSlot style={{ marginTop: 32 }} />
             </>
           );
         }}

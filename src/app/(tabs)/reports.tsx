@@ -14,6 +14,7 @@ import type { OrderView, Trip } from '@/db/types';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import { dateRange, initials, peso } from '@/lib/money';
 import { downloadOnWeb } from '@/lib/webDownload';
+import { AdSlot } from '@/components/AdSlot';
 
 type ReportFormat = 'csv' | 'pdf';
 
@@ -218,6 +219,8 @@ export default function Reports() {
             </View>
           ))}
         </View>
+
+        <AdSlot style={{ marginTop: 0, marginBottom: 6 }} />
 
         <Text style={styles.sectionLabel}>Top buyers</Text>
         <View style={styles.listCard}>

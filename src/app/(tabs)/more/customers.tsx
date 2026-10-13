@@ -13,6 +13,7 @@ import { customerValidationSchema, type CustomerFormValues } from '@/lib/formSch
 import type { Buyer } from '@/db/types';
 import { colors, fonts, radius, spacing } from '@/theme/tokens';
 import { initials } from '@/lib/money';
+import { AdSlot } from '@/components/AdSlot';
 
 export default function Customers() {
   const db = useSQLiteContext();
@@ -112,6 +113,7 @@ export default function Customers() {
             </View>
           ) : null}
         </View>
+        <AdSlot style={{ marginTop: 24 }} />
       </ScrollView>
 
       <Modal visible={formVisible} transparent animationType="slide" onRequestClose={() => setFormVisible(false)}>
